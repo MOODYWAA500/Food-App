@@ -13,8 +13,6 @@ const IS_VERCEL = !!process.env.VERCEL;
 
 if (!DATABASE_URL) { console.error('❌ DATABASE_URL غير موجود'); process.exit(1); }
 if (!ADMIN_PASSWORD || ADMIN_PASSWORD.length < 8) { console.error('❌ ضع ADMIN_PASSWORD (8 أحرف على الأقل)'); process.exit(1); }
-// إذا لم يوجد ADMIN_SECRET نشتق مفتاحاً ثابتاً من كلمة المرور ورابط القاعدة،
-// حتى تعمل الجلسات بين نسخ Vercel المختلفة وبعد إعادة التشغيل.
 const ADMIN_SECRET = process.env.ADMIN_SECRET
   || crypto.createHash('sha256').update('tm-secret|' + ADMIN_PASSWORD + '|' + DATABASE_URL).digest('hex');
 if (!process.env.ADMIN_SECRET) console.warn('⚠️ ADMIN_SECRET غير موجود: تم اشتقاق مفتاح ثابت. يُفضّل إضافته في المتغيرات.');
@@ -29,7 +27,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 const pool = new Pool({
   connectionString: DATABASE_URL,
   ssl: { rejectUnauthorized: false }, // Neon
-  max: IS_VERCEL ? 3 : 10,            // في الـ serverless نقلل الاتصالات لكل نسخة
+  max: IS_VERCEL ? 3 : 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 8000
 });
@@ -65,7 +63,21 @@ const sha = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
 const riyadhToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
 const toUTC = (ymd) => { const [y, m, d] = ymd.split('-').map(Number); return Date.UTC(y, m - 1, d); };
 const DAY = 86400000;
+const ymdOf = (t) => new Date(t).toISOString().slice(0, 10);
 const hashPw = (pw) => { const salt = crypto.randomBytes(16).toString('hex'); return salt + ':' + crypto.scryptSync(pw, salt, 64).toString('hex'); };
+
+/* أيام التوصيل الفعلية للطلب (نفس منطق لوحة الأدمن):
+   الطلب العادي = يوم واحد، والاشتراك = الأحد–الخميس (5 أيام أسبوعي / 20 شهري) ابتداءً من تاريخ البداية */
+function deliveryDates(o) {
+  const start = toUTC(String(o.booking_date || ''));
+  if (isNaN(start)) return [];
+  if (o.order_type !== 'subscription') return [ymdOf(start)];
+  const total = String(o.plan_id || '').startsWith('m') ? 20 : 5, out = [];
+  for (let t = start, i = 0; out.length < total && i < 120; i++, t += DAY) {
+    if (new Date(t).getUTCDay() <= 4) out.push(ymdOf(t));
+  }
+  return out;
+}
 
 function checkPw(pw, stored) {
   const [salt, key] = String(stored || '').split(':');
@@ -126,6 +138,15 @@ function authStaff(req, res, next) {
 
 const strip = (r) => { const { access_token, ...rest } = r; return rest; };
 const publicOrder = (r) => { const o = strip(r); delete o.latitude; delete o.longitude; return o; };
+/* نسخة المندوب: تضيف تقدّم التوصيل (كم يوم تم توصيله من إجمالي الأيام) */
+function staffView(r) {
+  const o = strip(r), dates = deliveryDates(r), done = r.deliveries || {}, today = riyadhToday();
+  o.delivery_total = dates.length;
+  o.delivered_count = dates.filter((d) => done[d]).length;
+  o.delivered_today = !!done[today];
+  o.today_due = dates.includes(today);
+  return o;
+}
 async function getPayment() {
   const { rows } = await pool.query("SELECT value FROM settings WHERE key = 'payment'");
   return rows[0] ? rows[0].value : {};
@@ -181,12 +202,14 @@ async function initializeDatabase() {
         value JSONB NOT NULL
       );
       ALTER TABLE staff ADD COLUMN IF NOT EXISTS password_enc TEXT DEFAULT '';
+      -- تتبّع التوصيل: آخر وقت توصيل + سجل توصيل كل يوم { "2026-10-27": "ISO time" }
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS deliveries JSONB DEFAULT '{}'::jsonb;
     `);
     console.log('✅ Connected to Neon PostgreSQL — tables verified.');
   } finally { client.release(); }
 }
 
-/* تهيئة الجداول مرة واحدة لكل نسخة (ضروري على Vercel حيث لا يوجد "تشغيل" ثابت) */
 let dbReady = null;
 const ensureDb = () => dbReady || (dbReady = initializeDatabase().catch((e) => { dbReady = null; throw e; }));
 app.use('/api', async (req, res, next) => {
@@ -313,21 +336,42 @@ app.post('/api/staff/login', limit('staff_login', 10, 15 * 60e3), h(async (req, 
 app.get('/api/staff/orders', authStaff, h(async (req, res) => {
   const { rows } = await pool.query(
     `${ORDER_WITH_DRIVER} WHERE o.driver_id = $1 ORDER BY o.booking_date DESC, o.created_at DESC LIMIT 200`, [req.staffId]);
-  res.json(rows.map(strip));
+  res.json(rows.map(staffView));
 }));
 
+/* تحديث حالة التوصيل.
+   - «في الطريق»: يغيّر الحالة فقط.
+   - «تم التوصيل»: يسجّل توصيل يوم واحد فقط (اليوم، أو يمرَّر body.date).
+     الاشتراك لا يصبح «تم التوصيل» إلا بعد توصيل كل أيامه (5 أو 20)؛
+     وبعد كل يوم تعود حالته إلى «تم تأكيد الطلب» لينتظر يوم التوصيل التالي. */
 app.patch('/api/staff/orders/:id', authStaff, h(async (req, res) => {
-  const check = await pool.query('SELECT driver_id, status FROM orders WHERE id = $1', [req.params.id]);
-  const cur = check.rows[0];
-  if (!cur || cur.driver_id !== req.staffId) return fail(res, 403, 'غير مصرح لك بتعديل هذا الطلب');
-  if (cur.status === 'cancelled') return fail(res, 400, 'هذا الطلب ملغي');
+  const { rows: cr } = await pool.query('SELECT * FROM orders WHERE id = $1', [req.params.id]);
+  const o = cr[0];
+  if (!o || o.driver_id !== req.staffId) return fail(res, 403, 'غير مصرح لك بتعديل هذا الطلب');
+  if (o.status === 'cancelled') return fail(res, 400, 'هذا الطلب ملغي');
+  if (o.status === 'delivered') return fail(res, 400, 'تم توصيل هذا الطلب بالكامل');
 
-  const newStatus = (req.body || {}).status;
+  const b = req.body || {}, newStatus = b.status;
   if (!['out_for_delivery', 'delivered'].includes(newStatus)) return fail(res, 400, 'حالة غير مسموح بتعديلها');
 
-  const { rows } = await pool.query('UPDATE orders SET status = $1 WHERE id = $2 RETURNING id', [newStatus, req.params.id]);
+  let rows;
+  if (newStatus === 'out_for_delivery') {
+    ({ rows } = await pool.query("UPDATE orders SET status = 'out_for_delivery' WHERE id = $1 RETURNING id", [o.id]));
+  } else {
+    const dates = deliveryDates(o), done = o.deliveries || {}, today = riyadhToday();
+    const target = (typeof b.date === 'string' && dates.includes(b.date)) ? b.date
+      : dates.includes(today) ? today
+      : dates.find((d) => d <= today && !done[d]);
+    if (!target) return fail(res, 400, 'لا يوجد توصيل مستحق لهذا اليوم');
+    if (done[target]) return fail(res, 400, 'تم تسجيل توصيل هذا اليوم مسبقاً');
+    const deliveries = { ...done, [target]: new Date().toISOString() };
+    const allDone = dates.every((d) => deliveries[d]);
+    ({ rows } = await pool.query(
+      'UPDATE orders SET deliveries = $1, delivered_at = now(), status = $2 WHERE id = $3 RETURNING id',
+      [JSON.stringify(deliveries), allDone ? 'delivered' : 'confirmed', o.id]));
+  }
   const full = await pool.query(`${ORDER_WITH_DRIVER} WHERE o.id = $1`, [rows[0].id]);
-  res.json(strip(full.rows[0]));
+  res.json(staffView(full.rows[0]));
 }));
 
 /* ============ API الأدمن ============ */
@@ -346,7 +390,12 @@ app.get('/api/admin/orders', auth, h(async (req, res) => {
 app.patch('/api/admin/orders/:id', auth, h(async (req, res) => {
   const b = req.body || {}, sets = [], vals = [];
   const add = (col, v) => { vals.push(v); sets.push(`${col} = $${vals.length}`); };
-  if (b.status !== undefined) { if (!STATUSES.includes(b.status)) return fail(res, 400, 'حالة غير صحيحة'); add('status', b.status); }
+  if (b.status !== undefined) {
+    if (!STATUSES.includes(b.status)) return fail(res, 400, 'حالة غير صحيحة');
+    add('status', b.status);
+    // الأدمن يضع «تم التوصيل» يدوياً: نسجّل وقت التوصيل إن لم يكن مسجلاً
+    if (b.status === 'delivered') sets.push('delivered_at = COALESCE(delivered_at, now())');
+  }
   if (b.payment_status !== undefined) { if (!PAYMENTS.includes(b.payment_status)) return fail(res, 400, 'حالة دفع غير صحيحة'); add('payment_status', b.payment_status); }
   if (b.driver_id !== undefined) {
     const id = String(b.driver_id || '');

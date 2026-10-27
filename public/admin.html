@@ -386,6 +386,13 @@ function dayDish(o) {
   const dd = o.meal_plan && o.meal_plan[from.getDay()];
   return `<div class="text-[10px] font-bold mt-0.5 ${dd ? 'text-emerald-600' : 'text-rose-500'}">🍽️ ${dd ? 'المطلوب: ' + dd.map(esc).join(' + ') : 'لم تُحدَّد الأطباق'}</div>`;
 }
+/* تقدّم توصيل الاشتراك (من سجل deliveries القادم من الخادم) */
+function deliveryProgress(o) {
+  if (o.order_type !== 'subscription') return '';
+  const total = deliveryDates(o).length, done = Object.keys(o.deliveries || {}).length;
+  if (!total || !done) return '';
+  return `<div class="text-[10px] font-bold mt-0.5 text-indigo-600">🚚 تم توصيل ${done} من ${total} أيام</div>`;
+}
 function syncDateBar() { $('dateBar').classList.toggle('hidden', $('timeFilterSelect').value !== 'today' || ['drivers', 'settings', 'reports'].includes(currentView)); }
 function setRange(k) { rangeKey = k; customDate = ''; $('rangeDate').value = ''; $('timeFilterSelect').value = 'today'; applyFilter(); }
 function setCustomDate(v) { if (!v) return; rangeKey = 'custom'; customDate = v; $('timeFilterSelect').value = 'today'; applyFilter(); }
@@ -454,7 +461,7 @@ function renderTable(list) {
     <tr class="hover:bg-navy-50/60 transition">
       <td class="p-3.5 font-bold text-saffron-600">#${esc(o.id)}</td>
       <td class="p-3.5"><div class="font-bold">${esc(o.client_name || '-')}</div><div class="text-[10px] text-navy-400" dir="ltr">${esc(o.client_phone || '-')}</div></td>
-      <td class="p-3.5 max-w-[220px]"><div class="font-medium truncate" title="${esc(orderText(o))}">${esc(orderText(o))}</div><div class="text-[10px] text-navy-400">${o.order_type === 'menu' ? 'طلب من القائمة' : 'اشتراك'}</div>${dayDish(o)}</td>
+      <td class="p-3.5 max-w-[220px]"><div class="font-medium truncate" title="${esc(orderText(o))}">${esc(orderText(o))}</div><div class="text-[10px] text-navy-400">${o.order_type === 'menu' ? 'طلب من القائمة' : 'اشتراك'}</div>${dayDish(o)}${deliveryProgress(o)}</td>
       <td class="p-3.5 text-navy-600">${esc(o.booking_date || '-')}<br><span class="text-[10px] text-navy-400">${esc(o.booking_time || '')}</span></td>
       <td class="p-3.5 font-bold text-emerald-600">${esc(o.service_price || 0)} ر.س</td>
       <td class="p-3.5"><span class="px-2.5 py-1 rounded-full text-[10px] font-bold ${payBadge(o.payment_status)}">${esc(PAY[o.payment_status] || '-')}</span></td>
@@ -596,37 +603,87 @@ function renderKitchen() {
 }
 
 /* ---------- التقارير ---------- */
+function reportSince() {
+  const days = +$('repPeriod').value;
+  return days ? Date.now() - days * 864e5 : 0;
+}
 function repList() {
-  const days = +$('repPeriod').value, since = days ? Date.now() - days * 864e5 : 0;
-  return allOrders.filter((o) => new Date(o.created_at).getTime() >= since);
+  const since = reportSince();
+  return allOrders.filter((o) => {
+    const created = new Date(o.created_at || 0).getTime();
+    return Number.isFinite(created) && created >= since;
+  });
+}
+/* التوصيلات المكتملة: كل يوم توصيل يُحسب على حدة (من سجل deliveries).
+   قيمة الاشتراك تُقسَّم على عدد أيامه، فتوصيل اليوم الأول لا يُحتسب كأن الاشتراك كله سُلِّم.
+   الطلبات القديمة بلا سجل أيام تُحتسب بحسب delivered_at. */
+function repDeliveredList() {
+  const since = reportSince(), out = [];
+  allOrders.forEach((o) => {
+    const dl = o.deliveries && Object.keys(o.deliveries).length
+      ? Object.entries(o.deliveries)
+      : (o.status === 'delivered' && o.delivered_at
+          ? [[new Date(o.delivered_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' }), o.delivered_at]]
+          : []);
+    const per = o.order_type === 'subscription'
+      ? (+o.service_price || 0) / (deliveryDates(o).length || 1)
+      : (+o.service_price || 0);
+    dl.forEach(([day, t]) => {
+      const ms = new Date(t).getTime();
+      if (Number.isFinite(ms) && ms >= since) out.push({ ...o, service_price: per, _day: day, _at: t });
+    });
+  });
+  return out;
 }
 function renderReports() {
   if (currentView !== 'reports') return;
-  const list = repList(), valid = list.filter((o) => o.status !== 'cancelled');
+  const list = repList(), delivered = repDeliveredList();
+  const valid = list.filter((o) => o.status !== 'cancelled');
   const sum = (a) => a.reduce((s, o) => s + (+o.service_price || 0), 0);
-  const paid = sum(valid.filter((o) => o.payment_status === 'paid')), unpaid = sum(valid.filter((o) => o.payment_status === 'unpaid'));
+  const paid = sum(valid.filter((o) => o.payment_status === 'paid'));
+  const unpaid = sum(valid.filter((o) => o.payment_status === 'unpaid'));
+  const deliveredRevenue = Math.round(sum(delivered));
+  const byDay = {};
+  delivered.forEach((o) => { const x = byDay[o._day] || (byDay[o._day] = { n: 0, v: 0 }); x.n++; x.v += +o.service_price || 0; });
+  const dayRows = Object.entries(byDay).sort((a, b) => b[0].localeCompare(a[0]));
+  const maxDay = Math.max(1, ...dayRows.map(([, x]) => x.v));
   const bar = (label, val, max, suffix) => `<div class="text-xs"><div class="flex justify-between mb-1"><span class="font-bold">${esc(label)}</span><span class="font-extrabold">${val}${suffix || ''}</span></div><div class="h-2 bg-navy-100 rounded-full"><div class="h-2 bg-saffron-500 rounded-full" style="width:${max ? Math.round(val / max * 100) : 0}%"></div></div></div>`;
   const card = (t, v, c) => `<div class="bg-navy-50/60 border border-navy-100 rounded-3xl p-4"><p class="text-[11px] text-navy-500 font-bold">${t}</p><p class="text-xl font-extrabold ${c || ''}">${v}</p></div>`;
   const dishes = tallyDishes(valid).slice(0, 8);
   const stat = STATUSES.map((s) => [s.label, list.filter((o) => o.status === s.value).length]).filter((x) => x[1]);
-  const cl = {}; valid.forEach((o) => { const c = cl[o.client_phone] || (cl[o.client_phone] = { n: o.client_name, v: 0 }); c.v += +o.service_price || 0; });
+  const cl = {};
+  valid.forEach((o) => { const c = cl[o.client_phone] || (cl[o.client_phone] = { n: o.client_name, v: 0 }); c.v += +o.service_price || 0; });
   const top = Object.values(cl).sort((a, b) => b.v - a.v).slice(0, 5);
-  const bySub = sum(valid.filter((o) => o.order_type === 'subscription')), byMenu = sum(valid.filter((o) => o.order_type === 'menu'));
+  const bySub = sum(valid.filter((o) => o.order_type === 'subscription'));
+  const byMenu = sum(valid.filter((o) => o.order_type === 'menu'));
   const box = (t, inner) => `<div class="border border-navy-100 rounded-3xl p-5 space-y-3"><h4 class="text-sm font-extrabold">${t}</h4>${inner || '<p class="text-xs text-navy-400">لا بيانات</p>'}</div>`;
   $('repBox').innerHTML = `
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      ${card('إجمالي المبيعات', sum(valid) + ' ر.س')}${card('المحصَّل (مدفوع)', paid + ' ر.س', 'text-emerald-600')}
-      ${card('غير محصَّل', unpaid + ' ر.س', 'text-rose-600')}${card('عدد الطلبات', list.length)}</div>
+      ${card('إجمالي المبيعات حسب تاريخ إنشاء الطلب', sum(valid) + ' ر.س')}
+      ${card('المحصَّل (مدفوع)', paid + ' ر.س', 'text-emerald-600')}
+      ${card('غير محصَّل', unpaid + ' ر.س', 'text-rose-600')}
+      ${card('عدد الطلبات المنشأة', list.length)}
+    </div>
+    <div>
+      <h3 class="font-extrabold text-sm mb-3">التوصيلات المكتملة خلال الفترة المحددة (كل يوم توصيل يُحسب على حدة)</h3>
+      <div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
+        ${card('عدد التوصيلات المكتملة', delivered.length, 'text-emerald-600')}
+        ${card('قيمة التوصيلات المكتملة', deliveredRevenue + ' ر.س', 'text-emerald-600')}
+        ${card('تاريخ الاعتماد', 'وقت ضغط المندوب «تم التوصيل»', 'text-navy-700')}
+      </div>
+    </div>
     <div class="grid lg:grid-cols-2 gap-4">
+      ${box('🚚 التوصيلات اليومية', dayRows.map(([d, x]) => bar(d + ' — ' + x.n + ' توصيلة', Math.round(x.v), maxDay, ' ر.س')).join(''))}
       ${box('🍽️ الأطباق الأكثر طلباً', dishes.map(([n, c]) => bar(n, c, dishes[0][1])).join(''))}
-      ${box('📊 حالات الطلبات', stat.map(([n, c]) => bar(n, c, list.length)).join(''))}
+      ${box('📊 حالات الطلبات حسب تاريخ الإنشاء', stat.map(([n, c]) => bar(n, c, list.length)).join(''))}
       ${box('💰 المبيعات حسب النوع', bar('اشتراكات', bySub, Math.max(bySub, byMenu), ' ر.س') + bar('طلبات القائمة', byMenu, Math.max(bySub, byMenu), ' ر.س'))}
-      ${box('🏆 أفضل العملاء', top.map((c) => bar(c.n || 'عميل', c.v, top[0].v, ' ر.س')).join(''))}</div>`;
+      ${box('🏆 أفضل العملاء', top.map((c) => bar(c.n || 'عميل', c.v, top[0].v, ' ر.س')).join(''))}
+    </div>`;
 }
 function exportCSV() {
   const q = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
-  const head = ['رقم الطلب', 'العميل', 'الجوال', 'النوع', 'الطلب', 'تاريخ التوصيل', 'المبلغ', 'الدفع', 'الحالة', 'تاريخ الإنشاء'];
-  const rows = repList().map((o) => [o.id, o.client_name, o.client_phone, o.order_type === 'menu' ? 'قائمة' : 'اشتراك', orderText(o), o.booking_date, o.service_price, PAY[o.payment_status], statusLabel(o.status), o.created_at]);
+  const head = ['رقم الطلب', 'العميل', 'الجوال', 'النوع', 'الطلب', 'تاريخ التوصيل المجدول', 'آخر توصيل فعلي', 'أيام تم توصيلها', 'المبلغ', 'الدفع', 'الحالة', 'تاريخ الإنشاء'];
+  const rows = repList().map((o) => [o.id, o.client_name, o.client_phone, o.order_type === 'menu' ? 'قائمة' : 'اشتراك', orderText(o), o.booking_date, o.delivered_at || '', Object.keys(o.deliveries || {}).join(' | '), o.service_price, PAY[o.payment_status], statusLabel(o.status), o.created_at]);
   const blob = new Blob(['\ufeff' + [head, ...rows].map((r) => r.map(q).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'orders-' + new Date().toISOString().slice(0, 10) + '.csv'; a.click();
 }
@@ -716,6 +773,7 @@ function openModal(id) {
       ${row('المبلغ الإجمالي', esc(o.service_price || 0) + ' ر.س')}
       ${row('التوصيل', `${esc(o.booking_date || '-')} (${esc(o.booking_time || '-')})`)}
       ${row('وقت الطلب', esc(created))}
+      ${deliveriesSection(o)}
       <div class="pt-2 border-t border-navy-100 space-y-1.5">
         <div class="text-xs"><span class="text-navy-500"><i class="fa-solid fa-location-dot ml-1 text-saffron-500"></i>العنوان:</span> <span class="font-bold">${esc(addr || '-')}</span></div>
         ${link ? `<a href="${esc(link)}" target="_blank" rel="noopener" class="inline-block text-[11px] text-saffron-600 font-bold underline">📍 فتح الموقع على خريطة جوجل</a>` : ''}
@@ -737,6 +795,16 @@ function openModal(id) {
     </div>`;
   setPay(modalPay);
   $('modal').classList.remove('hidden'); $('modal').classList.add('flex');
+}
+/* سجل أيام التوصيل داخل نافذة الطلب */
+function deliveriesSection(o) {
+  const dates = deliveryDates(o), done = o.deliveries || {};
+  if (!dates.length || !Object.keys(done).length) return '';
+  const fmt = (d) => d.toLocaleDateString('en-CA');
+  return `<div class="pt-2 border-t border-navy-100 space-y-1.5">
+    <p class="text-[11px] font-extrabold text-indigo-600">🚚 سجل التوصيل (${Object.keys(done).length} من ${dates.length})</p>
+    <div class="flex flex-wrap gap-1.5">${dates.map((d) => { const k = fmt(d), ok = !!done[k]; return `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${ok ? 'bg-emerald-100 text-emerald-700' : 'bg-navy-100 text-navy-500'}">${ok ? '✅' : '⏳'} ${k.slice(5)}</span>`; }).join('')}</div>
+  </div>`;
 }
 function setPay(p) {
   modalPay = p;

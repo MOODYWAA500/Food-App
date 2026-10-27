@@ -77,7 +77,7 @@ body { font-family: 'Alexandria', 'Tajawal', sans-serif; background: #f8fafc; co
     <div class="bg-white border border-navy-100 rounded-3xl p-5 shadow-sm flex items-center gap-4">
       <div class="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-600 grid place-items-center text-lg"><i class="fa-solid fa-circle-check"></i></div>
       <div>
-        <p class="text-xs text-navy-500 font-semibold">طلبات تم توصيلها</p>
+        <p class="text-xs text-navy-500 font-semibold">طلبات تم توصيلها بالكامل</p>
         <h3 class="text-xl font-extrabold text-navy-950" id="statDelivered">0</h3>
       </div>
     </div>
@@ -192,8 +192,8 @@ async function manualRefresh() {
 
 async function updateStatus(id, newStatus) {
   try {
-    await api('/api/staff/orders/' + id, 'PATCH', { status: newStatus });
-    toast('تم تحديث حالة الطلب بنجاح');
+    await api('/api/staff/orders/' + encodeURIComponent(id), 'PATCH', { status: newStatus });
+    toast(newStatus === 'delivered' ? 'تم تسجيل توصيل اليوم بنجاح' : 'تم تحديث حالة الطلب بنجاح');
     await fetchOrders();
   } catch (e) {
     toast(e.message, false);
@@ -215,15 +215,33 @@ function renderOrders() {
 
   list.innerHTML = orders.map(o => {
     const itemsDesc = o.order_type === 'menu' && o.items ? o.items.map(i => `${i.name} (${i.size}) × ${i.qty}`).join('، ') : (o.service_title || '-');
+    const isSub = o.order_type === 'subscription';
     const isDelivered = o.status === 'delivered';
+    const isCancelled = o.status === 'cancelled';
     const isOut = o.status === 'out_for_delivery';
-    
+    // الاشتراك: لا يُقفل زر «تم التوصيل» إلا إذا سُلِّم اليوم فعلاً
+    const lockDelivered = isDelivered || isCancelled || (isSub && o.delivered_today);
+    const lockOut = isDelivered || isCancelled || isOut || (isSub && o.delivered_today);
+    const pct = o.delivery_total ? Math.round((o.delivered_count / o.delivery_total) * 100) : 0;
+
+    const progress = isSub ? `
+        <div class="bg-white p-3 rounded-xl border border-navy-100 space-y-1.5">
+          <div class="flex justify-between text-xs font-bold">
+            <span class="text-navy-600">🚚 تقدّم التوصيل</span>
+            <span class="text-navy-950">تم توصيل ${o.delivered_count} من ${o.delivery_total} أيام</span>
+          </div>
+          <div class="h-2 bg-navy-100 rounded-full"><div class="h-2 bg-emerald-500 rounded-full" style="width:${pct}%"></div></div>
+          <p class="text-[11px] font-bold ${o.delivered_today ? 'text-emerald-600' : o.today_due ? 'text-saffron-600' : 'text-navy-400'}">
+            ${o.delivered_today ? '✅ تم تسجيل توصيل اليوم' : o.today_due ? '📦 اليوم عليك توصيل هذا الاشتراك' : 'لا يوجد توصيل مجدول اليوم'}
+          </p>
+        </div>` : '';
+
     return `
       <div class="border border-navy-100 rounded-2xl p-4 md:p-5 bg-navy-50/40 space-y-3 transition hover:border-navy-200">
         <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-navy-100">
           <div class="flex items-center gap-2">
             <span class="font-mono font-extrabold text-navy-950 text-sm bg-navy-100 px-2.5 py-1 rounded-lg">${esc(o.id)}</span>
-            <span class="text-xs px-2.5 py-1 rounded-full font-bold ${isDelivered ? 'bg-emerald-100 text-emerald-700' : isOut ? 'bg-indigo-100 text-indigo-700' : 'bg-amber-100 text-amber-700'}">${STATUS_MAP[o.status] || o.status}</span>
+            <span class="text-xs px-2.5 py-1 rounded-full font-bold ${isDelivered ? 'bg-emerald-100 text-emerald-700' : isOut ? 'bg-indigo-100 text-indigo-700' : 'bg-amber-100 text-amber-700'}">${esc(STATUS_MAP[o.status] || o.status)}</span>
           </div>
           <div class="text-xs text-navy-500 font-semibold">📅 موعد التوصيل: <span class="text-navy-950 font-bold">${esc(o.booking_date)} (${esc(o.booking_time)})</span></div>
         </div>
@@ -239,17 +257,19 @@ function renderOrders() {
           </div>
         </div>
 
-<div class="text-xs bg-white p-3 rounded-xl border border-navy-100">
+        <div class="text-xs bg-white p-3 rounded-xl border border-navy-100">
           <p class="text-navy-400 font-semibold mb-1">تفاصيل الطلب:</p>
           <p class="font-bold text-navy-900">${esc(itemsDesc)}</p>
         </div>
 
+        ${progress}
+
         <div class="flex flex-wrap items-center justify-between gap-2 pt-2">
-          <a href="https://www.google.com/maps?q=${o.latitude},${o.longitude}" target="_blank" class="bg-navy-900 hover:bg-navy-950 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition inline-flex items-center gap-1.5"><i class="fa-solid fa-location-dot text-saffron-400"></i> فتح موقع التوصيل في الخريطة</a>
-          
+          <a href="https://www.google.com/maps?q=${esc(o.latitude)},${esc(o.longitude)}" target="_blank" rel="noopener" class="bg-navy-900 hover:bg-navy-950 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition inline-flex items-center gap-1.5"><i class="fa-solid fa-location-dot text-saffron-400"></i> فتح موقع التوصيل في الخريطة</a>
+
           <div class="flex items-center gap-2">
-            <button type="button" onclick="updateStatus('${o.id}', 'out_for_delivery')" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition ${isOut ? 'opacity-50 pointer-events-none' : ''}"><i class="fa-solid fa-motorcycle ml-1"></i> في الطريق</button>
-            <button type="button" onclick="updateStatus('${o.id}', 'delivered')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition ${isDelivered ? 'opacity-50 pointer-events-none' : ''}"><i class="fa-solid fa-circle-check ml-1"></i> تم التوصيل</button>
+            <button type="button" onclick="updateStatus('${esc(o.id)}', 'out_for_delivery')" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition ${lockOut ? 'opacity-50 pointer-events-none' : ''}"><i class="fa-solid fa-motorcycle ml-1"></i> في الطريق</button>
+            <button type="button" onclick="updateStatus('${esc(o.id)}', 'delivered')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition ${lockDelivered ? 'opacity-50 pointer-events-none' : ''}"><i class="fa-solid fa-circle-check ml-1"></i> ${isSub ? 'تم توصيل اليوم' : 'تم التوصيل'}</button>
           </div>
         </div>
       </div>
