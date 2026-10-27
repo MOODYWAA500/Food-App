@@ -90,6 +90,22 @@ const sign = (v) => crypto.createHmac('sha256', ADMIN_SECRET).update(v).digest('
 const safeEq = (x, y) => { const a = Buffer.from(x), b = Buffer.from(y); return a.length === b.length && crypto.timingSafeEqual(a, b); };
 const bearer = (req) => (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
 
+/* تشفير كلمة مرور المندوب بشكل قابل للعرض للأدمن فقط (AES-256-GCM) */
+const ENC_KEY = crypto.createHash('sha256').update('staff-pw|' + ADMIN_SECRET).digest();
+const encPw = (pw) => {
+  const iv = crypto.randomBytes(12), c = crypto.createCipheriv('aes-256-gcm', ENC_KEY, iv);
+  const enc = Buffer.concat([c.update(pw, 'utf8'), c.final()]);
+  return [iv, c.getAuthTag(), enc].map((b) => b.toString('hex')).join(':');
+};
+const decPw = (s) => {
+  try {
+    const [iv, tag, enc] = String(s || '').split(':').map((x) => Buffer.from(x, 'hex'));
+    const d = crypto.createDecipheriv('aes-256-gcm', ENC_KEY, iv);
+    d.setAuthTag(tag);
+    return Buffer.concat([d.update(enc), d.final()]).toString('utf8');
+  } catch (e) { return ''; }
+};
+
 /* جلسة الأدمن: توكن موقّع بـ HMAC ينتهي بعد 12 ساعة */
 const makeToken = () => { const exp = String(Date.now() + 12 * 3600e3); return 'admin.' + exp + '.' + sign('admin.' + exp); };
 function auth(req, res, next) {
@@ -164,6 +180,7 @@ async function initializeDatabase() {
         key TEXT PRIMARY KEY,
         value JSONB NOT NULL
       );
+      ALTER TABLE staff ADD COLUMN IF NOT EXISTS password_enc TEXT DEFAULT '';
     `);
     console.log('✅ Connected to Neon PostgreSQL — tables verified.');
   } finally { client.release(); }
@@ -374,9 +391,25 @@ app.post('/api/admin/staff', auth, h(async (req, res) => {
   if ((await pool.query('SELECT 1 FROM staff WHERE phone = $1', [phone])).rowCount) return fail(res, 400, 'رقم الجوال مسجّل لمندوب آخر');
   const id = 'st_' + crypto.randomBytes(6).toString('hex');
   const { rows } = await pool.query(
-    `INSERT INTO staff (id, role, full_name, phone, password_hash, photo_url) VALUES ($1,'driver',$2,$3,$4,$5)
-     RETURNING id, role, full_name, phone, photo_url, created_at`, [id, name, phone, hashPw(pw), photo]);
+    `INSERT INTO staff (id, role, full_name, phone, password_hash, password_enc, photo_url) VALUES ($1,'driver',$2,$3,$4,$5,$6)
+     RETURNING id, role, full_name, phone, photo_url, created_at`, [id, name, phone, hashPw(pw), encPw(pw), photo]);
   res.status(201).json(rows[0]);
+}));
+
+/* عرض كلمة مرور المندوب (للأدمن فقط، عند الطلب) */
+app.get('/api/admin/staff/:id/password', auth, h(async (req, res) => {
+  const { rows } = await pool.query('SELECT password_enc FROM staff WHERE id = $1', [req.params.id]);
+  if (!rows[0]) return fail(res, 404, 'المندوب غير موجود');
+  res.json({ password: decPw(rows[0].password_enc) });
+}));
+
+/* تغيير كلمة مرور المندوب */
+app.put('/api/admin/staff/:id/password', auth, h(async (req, res) => {
+  const pw = String((req.body && req.body.password) || '');
+  if (pw.length < 6) return fail(res, 400, 'كلمة المرور 6 أحرف على الأقل');
+  const r = await pool.query('UPDATE staff SET password_hash = $1, password_enc = $2 WHERE id = $3', [hashPw(pw), encPw(pw), req.params.id]);
+  if (!r.rowCount) return fail(res, 404, 'المندوب غير موجود');
+  res.json({ ok: true });
 }));
 
 app.delete('/api/admin/staff/:id', auth, h(async (req, res) => {
