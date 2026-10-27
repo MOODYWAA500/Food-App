@@ -5,14 +5,20 @@ const path = require('path');
 const crypto = require('crypto');
 const { Pool, types } = require('pg');
 
-types.setTypeParser(1082, (v) => v);            // DATE يرجع كنص 'YYYY-MM-DD' بدون تغيير المنطقة الزمنية
+types.setTypeParser(1082, (v) => v);              // DATE يرجع كنص 'YYYY-MM-DD' بدون تغيير المنطقة الزمنية
 types.setTypeParser(1700, (v) => parseFloat(v));  // NUMERIC يرجع كرقم
 
 const { DATABASE_URL, ADMIN_PASSWORD } = process.env;
-if (!DATABASE_URL) { console.error('❌ DATABASE_URL غير موجود في .env'); process.exit(1); }
-if (!ADMIN_PASSWORD || ADMIN_PASSWORD.length < 8) { console.error('❌ ضع ADMIN_PASSWORD (8 أحرف على الأقل) في .env'); process.exit(1); }
+const IS_VERCEL = !!process.env.VERCEL;
+
+if (!DATABASE_URL) { console.error('❌ DATABASE_URL غير موجود'); process.exit(1); }
+if (!ADMIN_PASSWORD || ADMIN_PASSWORD.length < 8) { console.error('❌ ضع ADMIN_PASSWORD (8 أحرف على الأقل)'); process.exit(1); }
 const ADMIN_SECRET = process.env.ADMIN_SECRET || crypto.randomBytes(32).toString('hex');
-if (!process.env.ADMIN_SECRET) console.warn('⚠️ ADMIN_SECRET غير موجود: سيُسجَّل خروج الأدمن عند كل إعادة تشغيل.');
+if (!process.env.ADMIN_SECRET) {
+  console.warn(IS_VERCEL
+    ? '⚠️ ADMIN_SECRET غير موجود: كل نسخة من الدالة ستستخدم مفتاحاً مختلفاً وستفشل الجلسات! أضفه في إعدادات Vercel.'
+    : '⚠️ ADMIN_SECRET غير موجود: سيُسجَّل خروج الأدمن والمناديب عند كل إعادة تشغيل.');
+}
 const PORT = process.env.PORT || 5000;
 
 const app = express();
@@ -24,8 +30,11 @@ app.use(express.static(path.join(__dirname, 'public')));
 const pool = new Pool({
   connectionString: DATABASE_URL,
   ssl: { rejectUnauthorized: false }, // Neon
-  max: 10, idleTimeoutMillis: 30000, connectionTimeoutMillis: 5000
+  max: IS_VERCEL ? 3 : 10,            // في الـ serverless نقلل الاتصالات لكل نسخة
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 8000
 });
+pool.on('error', (e) => console.error('❌ pg pool error:', e.message));
 
 /* ============ الكتالوج (يجب أن يطابق الأسعار في الواجهات) ============ */
 const PLANS = {
@@ -49,54 +58,59 @@ const DAY_NAMES = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأر
 
 /* ============ أدوات ============ */
 const fail = (res, code, msg) => res.status(code).json({ error: msg });
-const h = (fn) => (req, res, next) => fn(req, res, next).catch((e) => { console.error('❌', req.method, req.path, e.message); fail(res, 500, 'خطأ في الخادم، حاول مرة أخرى'); });
+const h = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch((e) => {
+  console.error('❌', req.method, req.path, e.message);
+  fail(res, 500, 'خطأ في الخادم، حاول مرة أخرى');
+});
 const sha = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
 const riyadhToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
 const toUTC = (ymd) => { const [y, m, d] = ymd.split('-').map(Number); return Date.UTC(y, m - 1, d); };
 const DAY = 86400000;
 const hashPw = (pw) => { const salt = crypto.randomBytes(16).toString('hex'); return salt + ':' + crypto.scryptSync(pw, salt, 64).toString('hex'); };
 
+function checkPw(pw, stored) {
+  const [salt, key] = String(stored || '').split(':');
+  if (!salt || !key) return false;
+  const a = Buffer.from(key, 'hex'), b = crypto.scryptSync(pw, salt, 64);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+/* تحديد المعدل (في الذاكرة: على Vercel يعمل لكل نسخة على حدة) */
 function limit(name, max, windowMs) {
   const hits = new Map();
   return (req, res, next) => {
     const key = req.ip, now = Date.now(), rec = hits.get(key);
+    if (hits.size > 5000) for (const [k, v] of hits) if (v.until < now) hits.delete(k);
     if (!rec || rec.until < now) hits.set(key, { n: 1, until: now + windowMs });
     else if (++rec.n > max) return fail(res, 429, 'محاولات كثيرة، حاول لاحقاً');
     next();
   };
 }
 
-/* جلسة الأدمن: توكن موقّع بـ HMAC ينتهي بعد 12 ساعة */
 const sign = (v) => crypto.createHmac('sha256', ADMIN_SECRET).update(v).digest('hex');
-const makeToken = () => { const exp = String(Date.now() + 12 * 3600e3); return exp + '.' + sign(exp); };
+const safeEq = (x, y) => { const a = Buffer.from(x), b = Buffer.from(y); return a.length === b.length && crypto.timingSafeEqual(a, b); };
+const bearer = (req) => (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+
+/* جلسة الأدمن: توكن موقّع بـ HMAC ينتهي بعد 12 ساعة */
+const makeToken = () => { const exp = String(Date.now() + 12 * 3600e3); return 'admin.' + exp + '.' + sign('admin.' + exp); };
 function auth(req, res, next) {
-  const t = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  const [exp, sig] = t.split('.');
-  if (exp && sig && Number(exp) > Date.now()) {
-    const a = Buffer.from(sig), b = Buffer.from(sign(exp));
-    if (a.length === b.length && crypto.timingSafeEqual(a, b)) return next();
-  }
+  const [role, exp, sig] = bearer(req).split('.');
+  if (role === 'admin' && exp && sig && Number(exp) > Date.now() && safeEq(sig, sign(role + '.' + exp))) return next();
   fail(res, 401, 'غير مصرّح');
 }
 
-/* جلسة ومصادقة المندوبين (Staff) */
-const signStaff = (v) => crypto.createHmac('sha256', ADMIN_SECRET).update(v).digest('hex');
+/* جلسة المندوبين: staffId.exp.sig (24 ساعة) */
 function authStaff(req, res, next) {
-  const t = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  const [staffId, exp, sig] = t.split('.');
-  if (staffId && exp && sig && Number(exp) > Date.now()) {
-    const payload = staffId + '.' + exp;
-    const expectedSig = signStaff(payload);
-    const a = Buffer.from(sig), b = Buffer.from(expectedSig);
-    if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
-      req.staffId = staffId;
-      return next();
-    }
+  const [staffId, exp, sig] = bearer(req).split('.');
+  if (staffId && exp && sig && staffId !== 'admin' && Number(exp) > Date.now() && safeEq(sig, sign(staffId + '.' + exp))) {
+    req.staffId = staffId;
+    return next();
   }
   fail(res, 401, 'غير مصرّح للمندوب');
 }
 
 const strip = (r) => { const { access_token, ...rest } = r; return rest; };
+const publicOrder = (r) => { const o = strip(r); delete o.latitude; delete o.longitude; return o; };
 async function getPayment() {
   const { rows } = await pool.query("SELECT value FROM settings WHERE key = 'payment'");
   return rows[0] ? rows[0].value : {};
@@ -137,6 +151,7 @@ async function initializeDatabase() {
       );
       CREATE INDEX IF NOT EXISTS idx_orders_created ON orders (created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_orders_date ON orders (booking_date);
+      CREATE INDEX IF NOT EXISTS idx_orders_driver ON orders (driver_id);
       CREATE TABLE IF NOT EXISTS staff (
         id TEXT PRIMARY KEY,
         role VARCHAR(20) DEFAULT 'driver',
@@ -155,6 +170,14 @@ async function initializeDatabase() {
   } finally { client.release(); }
 }
 
+/* تهيئة الجداول مرة واحدة لكل نسخة (ضروري على Vercel حيث لا يوجد "تشغيل" ثابت) */
+let dbReady = null;
+const ensureDb = () => dbReady || (dbReady = initializeDatabase().catch((e) => { dbReady = null; throw e; }));
+app.use('/api', async (req, res, next) => {
+  try { await ensureDb(); next(); }
+  catch (e) { console.error('❌ DB init:', e.message); fail(res, 503, 'قاعدة البيانات غير متاحة حالياً'); }
+});
+
 /* ============ API العملاء ============ */
 app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
@@ -168,7 +191,7 @@ app.post('/api/orders', limit('orders', 20, 3600e3), h(async (req, res) => {
   const time = String(b.booking_time || '').trim().slice(0, 60);
   if (!time) return fail(res, 400, 'يرجى اختيار وقت التوصيل');
   const lat = Number(b.latitude), lng = Number(b.longitude);
-  if (!(lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) || b.latitude == null) return fail(res, 400, 'يرجى تحديد موقع التوصيل');
+  if (b.latitude == null || b.longitude == null || !(lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180)) return fail(res, 400, 'يرجى تحديد موقع التوصيل');
 
   let title, price = 0, items = [], planId = '', meals = 0;
   const type = b.order_type;
@@ -211,7 +234,7 @@ app.post('/api/my/orders', limit('my', 120, 60e3), h(async (req, res) => {
     [refs.map((r) => r.id), refs.map((r) => sha(r.token))]);
   const pay = rows.some((r) => r.status === 'awaiting_payment') ? await getPayment() : null;
   res.json(rows.map((r) => {
-    const o = strip(r); delete o.latitude; delete o.longitude;
+    const o = publicOrder(r);
     if (r.status === 'awaiting_payment' && pay && pay.iban) o.payment_info = { bank: pay.bank, holder: pay.holder, iban: pay.iban };
     return o;
   }));
@@ -250,65 +273,43 @@ app.post('/api/my/orders/:id/meals', limit('meals', 60, 3600e3), h(async (req, r
   }
   const merged = { ...current, ...plan };
   const upd = await pool.query(
-    `UPDATE orders SET pending_meal_plan = $1, meal_status = 'pending', meal_requested_at = now() WHERE id = $2 RETURNING *`,
+    `UPDATE orders SET pending_meal_plan = $1, meal_status = 'pending', meal_requested_at = now() WHERE id = $2 RETURNING id`,
     [JSON.stringify(merged), o.id]);
   const full = await pool.query(`${ORDER_WITH_DRIVER} WHERE o.id = $1`, [upd.rows[0].id]);
-  const out = strip(full.rows[0]); delete out.latitude; delete out.longitude;
-  res.json(out);
+  res.json(publicOrder(full.rows[0]));
 }));
 
 /* ============ API المندوبين (Staff) ============ */
 app.post('/api/staff/login', limit('staff_login', 10, 15 * 60e3), h(async (req, res) => {
   const { phone, password } = req.body || {};
-  const cleanPhone = String(phone || '').trim();
-  const cleanPw = String(password || '');
+  const cleanPhone = String(phone || '').trim(), cleanPw = String(password || '');
   if (!cleanPhone || !cleanPw) return fail(res, 400, 'يرجى إدخال الجوال وكلمة المرور');
 
   const { rows } = await pool.query('SELECT * FROM staff WHERE phone = $1', [cleanPhone]);
   const staff = rows[0];
-  if (!staff) return fail(res, 401, 'رقم الجوال أو كلمة المرور غير صحيحة');
-
-  const [salt, key] = staff.password_hash.split(':');
-  const hash = crypto.scryptSync(cleanPw, salt, 64).toString('hex');
-  if (!crypto.timingSafeEqual(Buffer.from(key), Buffer.from(hash))) {
-    return fail(res, 401, 'رقم الجوال أو كلمة المرور غير صحيحة');
-  }
+  if (!staff || !checkPw(cleanPw, staff.password_hash)) return fail(res, 401, 'رقم الجوال أو كلمة المرور غير صحيحة');
 
   const exp = String(Date.now() + 24 * 3600e3);
-  const payload = staff.id + '.' + exp;
-  const token = payload + '.' + signStaff(payload);
-
-  res.json({
-    token,
-    staff: { id: staff.id, full_name: staff.full_name, phone: staff.phone, photo_url: staff.photo_url }
-  });
+  const token = staff.id + '.' + exp + '.' + sign(staff.id + '.' + exp);
+  res.json({ token, staff: { id: staff.id, full_name: staff.full_name, phone: staff.phone, photo_url: staff.photo_url } });
 }));
 
 app.get('/api/staff/orders', authStaff, h(async (req, res) => {
   const { rows } = await pool.query(
-    `${ORDER_WITH_DRIVER} WHERE o.driver_id = $1 ORDER BY o.booking_date DESC LIMIT 200`,
-    [req.staffId]
-  );
+    `${ORDER_WITH_DRIVER} WHERE o.driver_id = $1 ORDER BY o.booking_date DESC, o.created_at DESC LIMIT 200`, [req.staffId]);
   res.json(rows.map(strip));
 }));
 
 app.patch('/api/staff/orders/:id', authStaff, h(async (req, res) => {
-  const check = await pool.query('SELECT driver_id FROM orders WHERE id = $1', [req.params.id]);
-  if (!check.rows[0] || check.rows[0].driver_id !== req.staffId) {
-    return fail(res, 403, 'غير مصرح لك بتعديل هذا الطلب');
-  }
+  const check = await pool.query('SELECT driver_id, status FROM orders WHERE id = $1', [req.params.id]);
+  const cur = check.rows[0];
+  if (!cur || cur.driver_id !== req.staffId) return fail(res, 403, 'غير مصرح لك بتعديل هذا الطلب');
+  if (cur.status === 'cancelled') return fail(res, 400, 'هذا الطلب ملغي');
 
-  const b = req.body || {};
-  const newStatus = b.status;
-  const allowed = ['out_for_delivery', 'delivered'];
-  if (!allowed.includes(newStatus)) {
-    return fail(res, 400, 'حالة غير مسموح بتعديلها');
-  }
+  const newStatus = (req.body || {}).status;
+  if (!['out_for_delivery', 'delivered'].includes(newStatus)) return fail(res, 400, 'حالة غير مسموح بتعديلها');
 
-  const { rows } = await pool.query(
-    'UPDATE orders SET status = $1 WHERE id = $2 RETURNING *',
-    [newStatus, req.params.id]
-  );
+  const { rows } = await pool.query('UPDATE orders SET status = $1 WHERE id = $2 RETURNING id', [newStatus, req.params.id]);
   const full = await pool.query(`${ORDER_WITH_DRIVER} WHERE o.id = $1`, [rows[0].id]);
   res.json(strip(full.rows[0]));
 }));
@@ -371,6 +372,7 @@ app.post('/api/admin/staff', auth, h(async (req, res) => {
   if (pw.length < 6) return fail(res, 400, 'كلمة المرور 6 أحرف على الأقل');
   const photo = String(b.photo_url || '');
   if (photo && (!photo.startsWith('data:image/') || photo.length > 300000)) return fail(res, 400, 'الصورة غير صالحة أو كبيرة');
+  if ((await pool.query('SELECT 1 FROM staff WHERE phone = $1', [phone])).rowCount) return fail(res, 400, 'رقم الجوال مسجّل لمندوب آخر');
   const id = 'st_' + crypto.randomBytes(6).toString('hex');
   const { rows } = await pool.query(
     `INSERT INTO staff (id, role, full_name, phone, password_hash, photo_url) VALUES ($1,'driver',$2,$3,$4,$5)
@@ -390,19 +392,30 @@ app.get('/api/admin/settings', auth, h(async (req, res) => res.json(await getPay
 app.put('/api/admin/settings', auth, h(async (req, res) => {
   const b = req.body || {}, iban = String(b.iban || '').replace(/\s+/g, '').toUpperCase();
   if (!/^SA\d{22}$/.test(iban)) return fail(res, 400, 'الآيبان السعودي يبدأ بـ SA ويتبعه 22 رقماً');
-  const value = { bank: String(b.bank || '').trim().slice(0, 80), holder: String(b.holder || '').trim().slice(0, 120), iban, note: String(b.note || '').trim().slice(0, 300) };
+  const value = {
+    bank: String(b.bank || '').trim().slice(0, 80),
+    holder: String(b.holder || '').trim().slice(0, 120),
+    iban,
+    note: String(b.note || '').trim().slice(0, 300)
+  };
   await pool.query(`INSERT INTO settings (key, value) VALUES ('payment', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [JSON.stringify(value)]);
   res.json(value);
 }));
 
 /* ============ الصفحات ============ */
+const page = (f) => (req, res) => res.sendFile(path.join(__dirname, 'public', f));
 app.use('/api', (req, res) => fail(res, 404, 'المسار غير موجود'));
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
-app.get('/staff', (req, res) => res.sendFile(path.join(__dirname, 'public', 'staff.html')));
-app.get('/{*splat}', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/', page('index.html'));
+app.get('/admin', page('admin.html'));
+app.get('/staff', page('staff.html'));
+app.get('/{*splat}', page('index.html'));
 app.use((err, req, res, next) => fail(res, 400, 'طلب غير صالح'));
 
-initializeDatabase()
-  .catch((e) => console.error('❌ Error initializing database:', e.message))
-  .finally(() => app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server listening on port ${PORT}`)));
+/* ============ التشغيل ============ */
+if (!IS_VERCEL) {
+  ensureDb()
+    .catch((e) => console.error('❌ Error initializing database:', e.message))
+    .finally(() => app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server listening on port ${PORT}`)));
+}
+
+module.exports = app; // يستخدمه Vercel كدالة serverless
