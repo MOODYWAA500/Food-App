@@ -13,12 +13,11 @@ const IS_VERCEL = !!process.env.VERCEL;
 
 if (!DATABASE_URL) { console.error('❌ DATABASE_URL غير موجود'); process.exit(1); }
 if (!ADMIN_PASSWORD || ADMIN_PASSWORD.length < 8) { console.error('❌ ضع ADMIN_PASSWORD (8 أحرف على الأقل)'); process.exit(1); }
-const ADMIN_SECRET = process.env.ADMIN_SECRET || crypto.randomBytes(32).toString('hex');
-if (!process.env.ADMIN_SECRET) {
-  console.warn(IS_VERCEL
-    ? '⚠️ ADMIN_SECRET غير موجود: كل نسخة من الدالة ستستخدم مفتاحاً مختلفاً وستفشل الجلسات! أضفه في إعدادات Vercel.'
-    : '⚠️ ADMIN_SECRET غير موجود: سيُسجَّل خروج الأدمن والمناديب عند كل إعادة تشغيل.');
-}
+// إذا لم يوجد ADMIN_SECRET نشتق مفتاحاً ثابتاً من كلمة المرور ورابط القاعدة،
+// حتى تعمل الجلسات بين نسخ Vercel المختلفة وبعد إعادة التشغيل.
+const ADMIN_SECRET = process.env.ADMIN_SECRET
+  || crypto.createHash('sha256').update('tm-secret|' + ADMIN_PASSWORD + '|' + DATABASE_URL).digest('hex');
+if (!process.env.ADMIN_SECRET) console.warn('⚠️ ADMIN_SECRET غير موجود: تم اشتقاق مفتاح ثابت. يُفضّل إضافته في المتغيرات.');
 const PORT = process.env.PORT || 5000;
 
 const app = express();
