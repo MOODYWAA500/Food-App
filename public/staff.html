@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>لوحة المندوب - طعم زمان</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800&family=Alexandria:wght@300;400;600;700&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  theme: { extend: {
+    colors: {
+      navy: { 50:'#f0f4f8', 100:'#d9e2ec', 200:'#bcccdc', 300:'#9fb3c8', 400:'#829ab1', 500:'#627d98', 600:'#486581', 700:'#334e68', 800:'#243b53', 900:'#102a43', 950:'#0b192c' },
+      saffron: { 50:'#fffaf0', 100:'#feebc8', 300:'#fbd38d', 400:'#f6ad55', 500:'#ed8936', 600:'#dd6b20' }
+    },
+    fontFamily: { sans: ['Alexandria', 'Tajawal', 'sans-serif'] }
+  } }
+}
+</script>
+<style>
+body { font-family: 'Alexandria', 'Tajawal', sans-serif; background: #f8fafc; color: #102a43; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: #334e68; border-radius: 99px; }
+.glass { background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.16); }
+.field-dark { background: rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.2); color:#fff; border-radius:14px; padding:.65rem .9rem; width:100%; outline:none; }
+.field-dark:focus { border-color:#fff; box-shadow:0 0 0 3px rgba(255,255,255,.2); }
+.field-dark::placeholder { color: rgba(255,255,255,.5); }
+</style>
+</head>
+<body class="p-3 md:p-6 min-h-screen flex flex-col">
+
+<!-- تسجيل دخول المندوب -->
+<div id="loginOverlay" class="fixed inset-0 z-[60] bg-navy-950 flex items-center justify-center p-4">
+  <form onsubmit="event.preventDefault(); doLogin()" class="w-full max-w-sm bg-navy-900 text-white rounded-3xl p-8 shadow-2xl space-y-5">
+    <div class="text-center space-y-2">
+      <div class="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-saffron-500 to-saffron-600 grid place-items-center text-xl shadow-lg"><i class="fa-solid fa-motorcycle"></i></div>
+      <h2 class="text-xl font-extrabold">بوابة مناديب التوصيل</h2>
+      <p class="text-xs text-navy-300">أدخل رقم الجوال وكلمة المرور الخاصة بك</p>
+    </div>
+    <div class="space-y-3">
+      <input id="loginPhone" type="tel" dir="ltr" class="field-dark" placeholder="رقم الجوال (05xxxxxxxx)" autocomplete="tel">
+      <input id="loginPass" type="password" class="field-dark" dir="ltr" placeholder="كلمة المرور" autocomplete="current-password">
+    </div>
+    <p id="loginErr" class="hidden text-xs font-bold text-rose-300 text-center"></p>
+    <button id="loginBtn" type="submit" class="w-full bg-saffron-500 hover:bg-saffron-600 disabled:opacity-60 text-white font-extrabold rounded-full py-3 transition shadow-md">تسجيل الدخول</button>
+  </form>
+</div>
+
+<!-- المحتوى الرئيسي -->
+<div class="max-w-4xl mx-auto w-full flex-1 flex flex-col gap-5">
+  <!-- الشريط العلوي -->
+  <header class="bg-navy-950 text-white rounded-3xl p-5 flex flex-wrap items-center justify-between gap-4 shadow-xl">
+    <div class="flex items-center gap-3">
+      <img id="staffPhoto" src="" alt="" class="w-12 h-12 rounded-full object-cover border-2 border-saffron-400 hidden">
+      <div class="w-12 h-12 rounded-full bg-saffron-500 text-white grid place-items-center font-bold text-lg" id="staffAvatar">م</div>
+      <div>
+        <h1 id="staffName" class="font-extrabold text-lg">مندوب التوصيل</h1>
+        <p id="staffPhone" class="text-xs text-navy-300" dir="ltr"></p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="button" onclick="manualRefresh()" class="glass hover:bg-white/20 text-xs px-4 py-2.5 rounded-full font-bold transition flex items-center gap-1.5"><i class="fa-solid fa-rotate"></i> تحديث</button>
+      <button type="button" onclick="logout()" class="glass hover:bg-white/20 text-xs px-4 py-2.5 rounded-full font-bold text-rose-300 transition flex items-center gap-1.5"><i class="fa-solid fa-right-from-bracket"></i> خروج</button>
+    </div>
+  </header>
+
+  <!-- إحصائيات سريعة للطلبات -->
+  <div class="grid grid-cols-2 gap-4">
+    <div class="bg-white border border-navy-100 rounded-3xl p-5 shadow-sm flex items-center gap-4">
+      <div class="w-11 h-11 rounded-2xl bg-saffron-100 text-saffron-600 grid place-items-center text-lg"><i class="fa-solid fa-box-open"></i></div>
+      <div>
+        <p class="text-xs text-navy-500 font-semibold">طلبات بانتظار التوصيل</p>
+        <h3 class="text-xl font-extrabold text-navy-950" id="statPending">0</h3>
+      </div>
+    </div>
+    <div class="bg-white border border-navy-100 rounded-3xl p-5 shadow-sm flex items-center gap-4">
+      <div class="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-600 grid place-items-center text-lg"><i class="fa-solid fa-circle-check"></i></div>
+      <div>
+        <p class="text-xs text-navy-500 font-semibold">طلبات تم توصيلها</p>
+        <h3 class="text-xl font-extrabold text-navy-950" id="statDelivered">0</h3>
+      </div>
+    </div>
+  </div>
+
+  <!-- قائمة الطلبات المسندة -->
+  <section class="bg-white border border-navy-100 rounded-3xl p-5 md:p-6 shadow-xl flex-1 space-y-4">
+    <div class="flex items-center justify-between">
+      <h2 class="font-extrabold text-navy-950 text-base flex items-center gap-2"><i class="fa-solid fa-list-check text-saffron-500"></i> طلبات التوصيل المسندة إليك</h2>
+      <span class="text-xs text-navy-400" id="ordersCount">0 طلبات</span>
+    </div>
+    <div id="ordersList" class="space-y-4">
+      <!-- يتم تعبئتها ديناميكياً -->
+    </div>
+  </section>
+</div>
+
+<div id="toast" class="hidden"></div>
+
+<script>
+const TOKEN_KEY = 'tm_staff_token';
+const STATUS_MAP = {
+  pending: 'قيد المراجعة',
+  awaiting_payment: 'بانتظار الدفع',
+  confirmed: 'تم التأكيد',
+  preparing: 'جاري التحضير',
+  out_for_delivery: 'في الطريق للعميل',
+  delivered: 'تم التوصيل',
+  cancelled: 'ملغي'
+};
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function toast(msg, ok = true) {
+  const el = $('toast'); el.textContent = msg;
+  el.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] px-5 py-3 rounded-full text-sm font-bold shadow-xl text-white ' + (ok ? 'bg-emerald-600' : 'bg-rose-600');
+  clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.add('hidden'), 3500);
+}
+
+const getToken = () => { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch(e) { return ''; } };
+const setToken = (t) => { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch(e) {} };
+
+async function api(path, method, body) {
+  const headers = {};
+  if (body) headers['Content-Type'] = 'application/json';
+  const t = getToken(); if (t) headers.Authorization = 'Bearer ' + t;
+  let res;
+  try { res = await fetch(path, { method: method || 'GET', headers, body: body ? JSON.stringify(body) : undefined }); }
+  catch (e) { throw new Error('تعذر الاتصال بالخادم'); }
+  let data = null;
+  try { data = await res.json(); } catch(e) {}
+  if (res.status === 401 && path !== '/api/staff/login') { showLogin('انتهت الجلسة، سجّل الدخول من جديد'); throw new Error('غير مصرّح'); }
+  if (!res.ok) throw new Error((data && data.error) || 'حدث خطأ');
+  return data;
+}
+
+function showLogin(msg) {
+  setToken('');
+  $('loginOverlay').classList.remove('hidden');
+  const e = $('loginErr'); e.textContent = msg || ''; e.classList.toggle('hidden', !msg);
+}
+
+async function doLogin() {
+  const btn = $('loginBtn'); btn.disabled = true;
+  try {
+    const phone = $('loginPhone').value.trim();
+    const password = $('loginPass').value;
+    const res = await api('/api/staff/login', 'POST', { phone, password });
+    setToken(res.token);
+    $('loginOverlay').classList.add('hidden');
+    setupStaffInfo(res.staff);
+    await fetchOrders();
+  } catch (e) {
+    const el = $('loginErr'); el.textContent = e.message; el.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function logout() {
+  setToken('');
+  showLogin();
+}
+
+function setupStaffInfo(st) {
+  if (!st) return;
+  $('staffName').textContent = st.full_name || 'مندوب التوصيل';
+  $('staffPhone').textContent = st.phone || '';
+  $('staffAvatar').textContent = (st.full_name || 'م')[0];
+  if (st.photo_url) {
+    $('staffPhoto').src = st.photo_url;
+    $('staffPhoto').classList.remove('hidden');
+    $('staffAvatar').classList.add('hidden');
+  }
+}
+
+let orders = [];
+async function fetchOrders() {
+  try {
+    orders = await api('/api/staff/orders');
+    renderOrders();
+  } catch(e) {
+    toast(e.message, false);
+  }
+}
+
+async function manualRefresh() {
+  await fetchOrders();
+  toast('تم تحديث الطلبات');
+}
+
+async function updateStatus(id, newStatus) {
+  try {
+    await api('/api/staff/orders/' + id, 'PATCH', { status: newStatus });
+    toast('تم تحديث حالة الطلب بنجاح');
+    await fetchOrders();
+  } catch (e) {
+    toast(e.message, false);
+  }
+}
+
+function renderOrders() {
+  const pendingCount = orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled').length;
+  const deliveredCount = orders.filter(o => o.status === 'delivered').length;
+  $('statPending').textContent = pendingCount;
+  $('statDelivered').textContent = deliveredCount;
+  $('ordersCount').textContent = orders.length + ' طلبات';
+
+  const list = $('ordersList');
+  if (!orders.length) {
+    list.innerHTML = `<div class="text-center py-12 text-navy-400 text-sm">لا توجد طلبات مسندة إليك حالياً.</div>`;
+    return;
+  }
+
+  list.innerHTML = orders.map(o => {
+    const itemsDesc = o.order_type === 'menu' && o.items ? o.items.map(i => `${i.name} (${i.size}) × ${i.qty}`).join('، ') : (o.service_title || '-');
+    const isDelivered = o.status === 'delivered';
+    const isOut = o.status === 'out_for_delivery';
+    
+    return `
+      <div class="border border-navy-100 rounded-2xl p-4 md:p-5 bg-navy-50/40 space-y-3 transition hover:border-navy-200">
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-navy-100">
+          <div class="flex items-center gap-2">
+            <span class="font-mono font-extrabold text-navy-950 text-sm bg-navy-100 px-2.5 py-1 rounded-lg">${esc(o.id)}</span>
+            <span class="text-xs px-2.5 py-1 rounded-full font-bold ${isDelivered ? 'bg-emerald-100 text-emerald-700' : isOut ? 'bg-indigo-100 text-indigo-700' : 'bg-amber-100 text-amber-700'}">${STATUS_MAP[o.status] || o.status}</span>
+          </div>
+          <div class="text-xs text-navy-500 font-semibold">📅 موعد التوصيل: <span class="text-navy-950 font-bold">${esc(o.booking_date)} (${esc(o.booking_time)})</span></div>
+        </div>
+
+        <div class="grid sm:grid-cols-2 gap-3 text-xs">
+          <div>
+            <p class="text-navy-400 font-semibold mb-0.5">اسم العميل:</p>
+            <p class="font-bold text-navy-950 text-sm">${esc(o.client_name)}</p>
+          </div>
+          <div>
+            <p class="text-navy-400 font-semibold mb-0.5">رقم الجوال:</p>
+            <a href="tel:${esc(o.client_phone)}" dir="ltr" class="font-bold text-saffron-600 hover:underline inline-flex items-center gap-1"><i class="fa-solid fa-phone"></i> ${esc(o.client_phone)}</a>
+          </div>
+        </div>
+
+<div class="text-xs bg-white p-3 rounded-xl border border-navy-100">
+          <p class="text-navy-400 font-semibold mb-1">تفاصيل الطلب:</p>
+          <p class="font-bold text-navy-900">${esc(itemsDesc)}</p>
+        </div>
+
+        <div class="flex flex-wrap items-center justify-between gap-2 pt-2">
+          <a href="https://www.google.com/maps?q=${o.latitude},${o.longitude}" target="_blank" class="bg-navy-900 hover:bg-navy-950 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition inline-flex items-center gap-1.5"><i class="fa-solid fa-location-dot text-saffron-400"></i> فتح موقع التوصيل في الخريطة</a>
+          
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="updateStatus('${o.id}', 'out_for_delivery')" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition ${isOut ? 'opacity-50 pointer-events-none' : ''}"><i class="fa-solid fa-motorcycle ml-1"></i> في الطريق</button>
+            <button type="button" onclick="updateStatus('${o.id}', 'delivered')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition ${isDelivered ? 'opacity-50 pointer-events-none' : ''}"><i class="fa-solid fa-circle-check ml-1"></i> تم التوصيل</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+window.addEventListener('DOMContentLoaded', async () => {
+  const t = getToken();
+  if (!t) {
+    showLogin();
+  } else {
+    try {
+      await fetchOrders();
+      $('loginOverlay').classList.add('hidden');
+    } catch(e) {
+      showLogin();
+    }
+  }
+});
+</script>
+</body>
+</html>

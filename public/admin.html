@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>لوحة إدارة طعم زمان</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800&family=Alexandria:wght@300;400;600;700&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  theme: { extend: {
+    colors: {
+      navy: { 50:'#f0f4f8', 100:'#d9e2ec', 200:'#bcccdc', 300:'#9fb3c8', 400:'#829ab1', 500:'#627d98', 600:'#486581', 700:'#334e68', 800:'#243b53', 900:'#102a43', 950:'#0b192c' },
+      saffron: { 50:'#fffaf0', 100:'#feebc8', 300:'#fbd38d', 400:'#f6ad55', 500:'#ed8936', 600:'#dd6b20' }
+    },
+    fontFamily: { sans: ['Alexandria', 'Tajawal', 'sans-serif'] }
+  } }
+}
+</script>
+<style>
+body { font-family: 'Alexandria', 'Tajawal', sans-serif; background: #f8fafc; color: #102a43; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: #334e68; border-radius: 99px; }
+.glass { background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.16); }
+.navbtn { display:flex; align-items:center; gap:.75rem; padding:.75rem 1rem; border-radius:1rem; font-size:.85rem; font-weight:700; white-space:nowrap; color:#bcccdc; transition:.15s; width:100%; cursor:pointer; background:transparent; border:none; text-align:start; }
+.navbtn:hover { background: rgba(255,255,255,.08); color:#fff; }
+.navbtn.active { background:#ed8936; color:#fff; }
+.navbtn i { width:1.25rem; text-align:center; }
+.field-dark { background: rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.2); color:#fff; border-radius:14px; padding:.65rem .9rem; width:100%; outline:none; }
+.field-dark:focus { border-color:#fff; box-shadow:0 0 0 3px rgba(255,255,255,.2); }
+.field-dark::placeholder { color: rgba(255,255,255,.5); }
+@media print { aside, #filterBox, #dateBar, .no-print { display:none !important; } body { padding:0; background:#fff; } main { box-shadow:none; border:0; } }
+</style>
+</head>
+<body class="p-3 md:p-6 min-h-screen">
+
+<!-- تسجيل دخول الأدمن -->
+<div id="loginOverlay" class="fixed inset-0 z-[60] bg-navy-950 flex items-center justify-center p-4">
+  <form onsubmit="event.preventDefault(); doLogin()" class="w-full max-w-sm bg-navy-900 text-white rounded-3xl p-8 shadow-2xl space-y-5">
+    <div class="text-center space-y-2">
+      <div class="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-saffron-500 to-saffron-600 grid place-items-center text-xl"><i class="fa-solid fa-lock"></i></div>
+      <h2 class="text-xl font-extrabold">دخول لوحة الإدارة</h2>
+      <p class="text-xs text-navy-300">أدخل كلمة مرور الأدمن للمتابعة</p>
+    </div>
+    <input id="loginPass" type="password" class="field-dark" dir="ltr" placeholder="كلمة المرور" autocomplete="current-password">
+    <p id="loginErr" class="hidden text-xs font-bold text-rose-300 text-center"></p>
+    <button id="loginBtn" type="submit" class="w-full bg-saffron-500 hover:bg-saffron-600 disabled:opacity-60 text-white font-extrabold rounded-full py-3 transition">دخول</button>
+  </form>
+</div>
+
+<div class="max-w-[1400px] mx-auto flex flex-col lg:flex-row gap-4">
+
+  <!-- الشريط الجانبي -->
+  <aside class="lg:w-64 shrink-0 bg-navy-950 text-white rounded-[32px] p-4 lg:p-5 flex flex-col gap-4 lg:sticky lg:top-6 lg:self-start lg:min-h-[calc(100vh-3rem)] shadow-xl">
+    <div class="flex items-center gap-3 lg:pb-5 lg:border-b lg:border-white/10">
+      <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-saffron-500 to-saffron-600 grid place-items-center text-lg shadow-md"><i class="fa-solid fa-utensils"></i></div>
+      <div>
+        <div class="font-extrabold leading-tight">طعم <span class="text-saffron-400">زمان</span></div>
+        <div class="text-xs text-navy-300">لوحة إدارة الطلبات</div>
+      </div>
+    </div>
+
+    <nav class="flex lg:flex-col gap-1.5 overflow-x-auto lg:overflow-visible">
+      <button type="button" data-view="orders" onclick="setView('orders')" class="navbtn active">
+        <i class="fa-solid fa-bag-shopping"></i><span class="flex-1">الطلبات</span>
+        <span id="navMeal" class="hidden bg-saffron-500 text-white text-xs rounded-full min-w-[1.4rem] h-6 px-1.5 grid place-items-center" title="طلبات تعديل أطباق">0</span>
+        <span id="navPending" class="hidden bg-rose-500 text-white text-xs rounded-full min-w-[1.4rem] h-6 px-1.5 grid place-items-center">0</span>
+      </button>
+      <button type="button" data-view="clients" onclick="setView('clients')" class="navbtn"><i class="fa-solid fa-users"></i><span class="flex-1">العملاء</span></button>
+      <button type="button" data-view="kitchen" onclick="setView('kitchen')" class="navbtn"><i class="fa-solid fa-kitchen-set"></i><span class="flex-1">مطبخ اليوم</span></button>
+      <button type="button" data-view="reports" onclick="setView('reports')" class="navbtn"><i class="fa-solid fa-chart-column"></i><span class="flex-1">التقارير</span></button>
+      <button type="button" data-view="drivers" onclick="setView('drivers')" class="navbtn"><i class="fa-solid fa-motorcycle"></i><span class="flex-1">المندوبون</span></button>
+      <button type="button" data-view="settings" onclick="setView('settings')" class="navbtn"><i class="fa-solid fa-building-columns"></i><span class="flex-1">بيانات الدفع</span></button>
+    </nav>
+
+    <div class="lg:mt-auto flex lg:flex-col gap-2">
+      <a href="/" target="_blank" class="flex-1 glass rounded-2xl px-4 py-2.5 text-sm text-center hover:bg-white/25 transition"><i class="fa-solid fa-arrow-up-right-from-square ml-1"></i> عرض الموقع</a>
+      <button type="button" onclick="logout()" class="flex-1 glass rounded-2xl px-4 py-2.5 text-sm text-center hover:bg-white/25 transition"><i class="fa-solid fa-right-from-bracket ml-1"></i> تسجيل الخروج</button>
+    </div>
+  </aside>
+
+  <!-- المحتوى -->
+  <main class="flex-1 min-w-0 bg-white rounded-[32px] p-4 md:p-8 shadow-xl border border-navy-100">
+
+    <div class="flex flex-wrap items-start justify-between gap-4 mb-6">
+      <div>
+        <h1 id="pageTitle" class="text-3xl md:text-4xl font-extrabold text-navy-950">الطلبات</h1>
+        <p id="pageSub" class="text-navy-500 mt-1 text-sm">تابع الاشتراكات وطلبات القائمة، وعيّن المندوب، وحدّث الحالات بسهولة.</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <div id="filterBox" class="flex items-center gap-1 bg-saffron-50 border border-saffron-300 rounded-full p-1 text-xs">
+          <input type="hidden" id="timeFilterSelect" value="today">
+          <span class="px-3 font-semibold text-navy-800 hidden md:inline">نطاق العرض:</span>
+          <button type="button" data-f="today" onclick="setFilter('today')" class="fbtn px-3.5 py-1.5 rounded-full font-bold transition">جدول الطلبات</button>
+          <button type="button" data-f="new" onclick="setFilter('new')" class="fbtn px-3.5 py-1.5 rounded-full font-bold transition flex items-center gap-1.5">الطلبات الجديدة <span id="newCount" class="hidden bg-rose-500 text-white rounded-full min-w-[1.25rem] h-5 px-1 place-items-center text-[10px] font-extrabold">0</span></button>
+          <button type="button" data-f="all" onclick="setFilter('all')" class="fbtn px-3.5 py-1.5 rounded-full font-bold transition">جميع الأوقات</button>
+        </div>
+        <button type="button" onclick="manualRefresh()" class="no-print bg-navy-50 hover:bg-navy-100 text-xs px-4 py-2.5 rounded-full border border-navy-200 text-navy-700 transition"><i class="fa-solid fa-rotate ml-1"></i> تحديث</button>
+        <button type="button" id="addStaffBtn" onclick="openStaffModal()" class="hidden bg-gradient-to-r from-saffron-500 to-saffron-600 text-white text-sm font-bold px-5 py-2.5 rounded-full transition shadow-sm"><i class="fa-solid fa-plus ml-1"></i> إضافة مندوب</button>
+      </div>
+    </div>
+
+    <div id="dateBar" class="flex flex-wrap items-center gap-2 mb-5 text-xs">
+      <span class="font-bold text-navy-600">📅 عرض طلبات:</span>
+      <button type="button" data-r="today" onclick="setRange('today')" class="rbtn px-3.5 py-1.5 rounded-full border border-navy-200 font-bold transition">اليوم</button>
+      <button type="button" data-r="tomorrow" onclick="setRange('tomorrow')" class="rbtn px-3.5 py-1.5 rounded-full border border-navy-200 font-bold transition">غداً</button>
+      <button type="button" data-r="after" onclick="setRange('after')" class="rbtn px-3.5 py-1.5 rounded-full border border-navy-200 font-bold transition">بعد غد</button>
+      <button type="button" data-r="week" onclick="setRange('week')" class="rbtn px-3.5 py-1.5 rounded-full border border-navy-200 font-bold transition">هذا الأسبوع</button>
+      <button type="button" data-r="nextweek" onclick="setRange('nextweek')" class="rbtn px-3.5 py-1.5 rounded-full border border-navy-200 font-bold transition">الأسبوع القادم</button>
+      <input type="date" id="rangeDate" onchange="setCustomDate(this.value)" class="border border-navy-200 rounded-full px-3 py-1.5 font-bold text-navy-700 focus:outline-none focus:border-saffron-500" title="اختر تاريخاً محدداً">
+    </div>
+
+    <!-- الطلبات -->
+    <section id="view-orders" class="space-y-6">
+      <div id="mealBanner" class="hidden bg-saffron-50 border-2 border-saffron-300 rounded-3xl p-4 space-y-2"></div>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-navy-50/60 border border-navy-100 rounded-3xl p-5 flex items-center gap-4">
+          <div class="w-12 h-12 rounded-2xl bg-saffron-100 text-saffron-600 grid place-items-center text-xl"><i class="fa-solid fa-sack-dollar"></i></div>
+          <div><p class="text-xs text-navy-500 font-semibold">قيمة الطلبات المعروضة</p><h3 class="text-xl font-extrabold text-navy-950" id="statRevenue">0 ر.س</h3></div>
+        </div>
+        <div class="bg-navy-50/60 border border-navy-100 rounded-3xl p-5 flex items-center gap-4">
+          <div class="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 grid place-items-center text-xl"><i class="fa-solid fa-receipt"></i></div>
+          <div><p class="text-xs text-navy-500 font-semibold" id="lblOrders">طلبات اليوم</p><h3 class="text-xl font-extrabold text-navy-950" id="statOrders">0</h3></div>
+        </div>
+        <div class="bg-navy-50/60 border border-navy-100 rounded-3xl p-5 flex items-center gap-4">
+          <div class="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-600 grid place-items-center text-xl"><i class="fa-solid fa-users"></i></div>
+          <div><p class="text-xs text-navy-500 font-semibold" id="lblClients">العملاء اليوم</p><h3 class="text-xl font-extrabold text-navy-950" id="statClients">0</h3></div>
+        </div>
+        <div class="bg-navy-50/60 border border-navy-100 rounded-3xl p-5 flex items-center gap-4">
+          <div class="w-12 h-12 rounded-2xl bg-amber-100 text-amber-600 grid place-items-center text-xl"><i class="fa-solid fa-chart-pie"></i></div>
+          <div><p class="text-xs text-navy-500 font-semibold">متوسط قيمة الطلب</p><h3 class="text-xl font-extrabold text-navy-950" id="statAvg">0 ر.س</h3></div>
+        </div>
+      </div>
+
+      <div class="bg-navy-950 rounded-[28px] p-4 md:p-6 text-white space-y-4 shadow-xl">
+        <div class="flex flex-wrap justify-between items-center gap-3">
+          <h2 class="text-base font-bold flex items-center gap-2"><i class="fa-solid fa-list-check text-saffron-400"></i><span id="tableTitle">جدول الطلبات (اليوم)</span></h2>
+          <input type="text" id="searchInput" onkeyup="filterOrders()" placeholder="بحث باسم العميل أو الجوال أو رقم الطلب..." class="field-dark !rounded-full !py-2 text-xs w-full sm:w-72">
+        </div>
+        <div class="rounded-2xl overflow-x-auto bg-white text-navy-800">
+          <table class="w-full text-right text-xs min-w-[820px]">
+            <thead class="bg-navy-50 text-navy-800 font-bold border-b border-navy-100">
+              <tr>
+                <th class="p-3.5">رقم الطلب</th><th class="p-3.5">العميل والجوال</th><th class="p-3.5">الطلب</th>
+                <th class="p-3.5">موعد التوصيل</th><th class="p-3.5">المبلغ</th><th class="p-3.5">الدفع</th>
+                <th class="p-3.5">الحالة</th><th class="p-3.5 text-center">إجراء</th>
+              </tr>
+            </thead>
+            <tbody id="ordersBody" class="divide-y divide-navy-50"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- العملاء -->
+    <section id="view-clients" class="hidden space-y-4">
+      <h2 class="text-base font-bold flex items-center gap-2 text-navy-950"><i class="fa-solid fa-users-gear text-saffron-500"></i><span id="clientsTitle">العملاء (اليوم)</span></h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4" id="clientsGrid"></div>
+    </section>
+
+    <!-- مطبخ اليوم -->
+    <section id="view-kitchen" class="hidden space-y-4">
+      <div class="flex items-center justify-between gap-3">
+        <p class="text-xs text-navy-500">يجمع الأطباق المطلوب تجهيزها حسب التاريخ المختار أعلاه (اليوم / غداً / ...).</p>
+        <button type="button" onclick="window.print()" class="no-print bg-navy-700 text-white text-xs font-bold px-4 py-2 rounded-full"><i class="fa-solid fa-print ml-1"></i> طباعة</button>
+      </div>
+      <div id="kitchenBox" class="space-y-6"></div>
+    </section>
+
+    <!-- التقارير -->
+    <section id="view-reports" class="hidden space-y-5">
+      <div class="flex flex-wrap items-center gap-2">
+        <select id="repPeriod" onchange="renderReports()" class="border border-navy-200 rounded-full px-4 py-2 text-xs font-bold">
+          <option value="1">آخر 24 ساعة</option><option value="7" selected>آخر 7 أيام</option><option value="30">آخر 30 يوماً</option><option value="0">كل الأوقات</option>
+        </select>
+        <button type="button" onclick="exportCSV()" class="bg-emerald-600 text-white text-xs font-bold px-4 py-2 rounded-full"><i class="fa-solid fa-file-csv ml-1"></i> تصدير Excel/CSV</button>
+      </div>
+      <div id="repBox" class="space-y-5"></div>
+    </section>
+
+    <!-- بيانات الدفع -->
+    <section id="view-settings" class="hidden max-w-2xl space-y-5">
+      <div class="bg-navy-50/60 border border-navy-100 rounded-3xl p-6 space-y-4">
+        <h2 class="font-extrabold text-navy-950 flex items-center gap-2"><i class="fa-solid fa-building-columns text-saffron-500"></i> بيانات الحساب البنكي للفواتير</h2>
+        <p class="text-xs text-navy-500">تُحفظ مرة واحدة وتُضاف تلقائياً في كل فاتورة تُرسل للعملاء من زر «إجراء»، وتظهر للعميل في «حسابي» عندما يكون الطلب بانتظار الدفع.</p>
+        <div class="grid sm:grid-cols-2 gap-3">
+          <label class="text-[11px] font-bold text-navy-600">اسم البنك<input id="setBank" oninput="renderPreview()" class="mt-1 w-full bg-white border border-navy-200 rounded-xl px-3 py-2.5 text-sm font-semibold focus:outline-none focus:border-saffron-500" placeholder="مثال: بنك الراجحي"></label>
+          <label class="text-[11px] font-bold text-navy-600">اسم صاحب الحساب<input id="setHolder" oninput="renderPreview()" class="mt-1 w-full bg-white border border-navy-200 rounded-xl px-3 py-2.5 text-sm font-semibold focus:outline-none focus:border-saffron-500" placeholder="الاسم كما في الحساب"></label>
+        </div>
+        <label class="block text-[11px] font-bold text-navy-600">رقم الآيبان (IBAN)<input id="setIban" oninput="renderPreview()" dir="ltr" class="mt-1 w-full bg-white border border-navy-200 rounded-xl px-3 py-2.5 text-sm font-bold tracking-wider focus:outline-none focus:border-saffron-500" placeholder="SA00 0000 0000 0000 0000 0000"></label>
+        <label class="block text-[11px] font-bold text-navy-600">ملاحظة تُضاف أسفل الفاتورة (اختياري)<input id="setNote" oninput="renderPreview()" class="mt-1 w-full bg-white border border-navy-200 rounded-xl px-3 py-2.5 text-sm font-semibold focus:outline-none focus:border-saffron-500" placeholder="مثال: يرجى التحويل خلال 24 ساعة"></label>
+        <button type="button" onclick="saveSettings()" class="bg-gradient-to-r from-saffron-500 to-saffron-600 text-white font-extrabold rounded-full px-7 py-3 shadow-md">حفظ بيانات الدفع</button>
+      </div>
+      <div class="bg-navy-950 text-white rounded-3xl p-5 space-y-2">
+        <p class="text-xs font-bold text-saffron-300">معاينة نص الفاتورة</p>
+        <pre id="invoicePreview" class="text-xs whitespace-pre-wrap leading-relaxed font-sans"></pre>
+      </div>
+    </section>
+
+    <!-- المندوبون -->
+    <section id="view-drivers" class="hidden">
+      <div id="staffGrid" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5"></div>
+    </section>
+  </main>
+</div>
+
+<!-- نافذة تفاصيل الطلب -->
+<div id="modal" class="hidden fixed inset-0 z-40 items-center justify-center p-4 bg-navy-950/60 backdrop-blur-sm" onclick="if (event.target === this) closeModal()">
+  <div class="w-full max-w-lg max-h-[92vh] overflow-y-auto bg-white rounded-3xl shadow-2xl border border-navy-100">
+    <div class="sticky top-0 z-10 bg-navy-950 text-white px-6 py-4 flex items-center justify-between rounded-t-3xl">
+      <div><h3 class="text-base font-extrabold">تفاصيل الطلب والإجراء</h3><p id="modalSubtitle" class="text-[11px] text-saffron-300 font-mono mt-0.5"></p></div>
+      <button type="button" onclick="closeModal()" class="w-8 h-8 rounded-lg glass hover:bg-white/25 flex items-center justify-center text-sm"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div id="modalBody" class="p-6 space-y-4"></div>
+  </div>
+</div>
+
+<!-- نافذة ملف العميل -->
+<div id="clientModal" class="hidden fixed inset-0 z-40 items-center justify-center p-4 bg-navy-950/60 backdrop-blur-sm" onclick="if (event.target === this) closeClient()">
+  <div class="w-full max-w-lg max-h-[92vh] overflow-y-auto bg-white rounded-3xl shadow-2xl">
+    <div class="sticky top-0 bg-navy-950 text-white px-6 py-4 flex items-center justify-between rounded-t-3xl">
+      <div><h3 id="clName" class="font-extrabold"></h3><p id="clPhone" dir="ltr" class="text-[11px] text-saffron-300"></p></div>
+      <button type="button" onclick="closeClient()" class="w-8 h-8 rounded-lg glass"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div id="clBody" class="p-6 space-y-4"></div>
+  </div>
+</div>
+
+<!-- نافذة إضافة مندوب -->
+<div id="staffModal" class="hidden fixed inset-0 z-40 items-center justify-center p-4 bg-navy-950/60 backdrop-blur-sm" onclick="if (event.target === this) closeStaffModal()">
+  <div class="w-full max-w-md max-h-[92vh] overflow-y-auto bg-navy-950 text-white rounded-3xl p-6 md:p-8 shadow-2xl">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-xl font-extrabold">إضافة مندوب توصيل</h2>
+      <button type="button" onclick="closeStaffModal()" class="glass rounded-full w-9 h-9"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="flex items-center gap-4 mb-5">
+      <img id="photoPreview" class="w-20 h-20 rounded-full object-cover bg-white/15 border-2 border-saffron-400" alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==">
+      <label class="glass rounded-full px-4 py-2 text-sm cursor-pointer hover:bg-white/25 transition"><i class="fa-regular fa-image ml-1"></i> اختيار صورة
+        <input id="photoInput" type="file" accept="image/*" class="hidden" onchange="handlePhotoSelect(event)">
+      </label>
+    </div>
+    <div class="space-y-4">
+      <div><label class="block text-xs font-bold text-navy-200 mb-1">الاسم الكامل</label><input id="sName" class="field-dark" placeholder="أدخل الاسم الكامل" autocomplete="off"></div>
+      <div><label class="block text-xs font-bold text-navy-200 mb-1">رقم الجوال</label><input id="sPhone" class="field-dark" dir="ltr" inputmode="tel" autocomplete="off" placeholder="05xxxxxxxx"></div>
+      <div>
+        <label class="block text-xs font-bold text-navy-200 mb-1">كلمة المرور</label>
+        <div class="flex gap-2">
+          <input id="sPass" type="text" class="field-dark flex-1" dir="ltr" placeholder="أدخل أو ولّد كلمة المرور" autocomplete="new-password">
+          <button type="button" onclick="document.getElementById('sPass').value = genPass()" class="bg-saffron-500 text-white font-bold rounded-xl px-4 text-xs whitespace-nowrap hover:bg-saffron-600 transition">🔐 توليد</button>
+        </div>
+        <p class="text-[10px] text-navy-300 mt-1">تُحفظ مشفّرة في الخادم ولا يمكن عرضها لاحقاً، فاحتفظ بنسخة منها الآن.</p>
+      </div>
+    </div>
+    <button id="saveStaffBtn" type="button" onclick="saveStaff()" class="bg-white text-navy-950 font-extrabold rounded-full px-7 py-3 w-full mt-6 hover:bg-saffron-50 disabled:opacity-60 transition shadow-md">حفظ الحساب</button>
+  </div>
+</div>
+
+<div id="toast" class="hidden"></div>
+
+<script>
+const DAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
+
+const STATUSES = [
+  { value: 'pending', label: 'قيد المراجعة' },
+  { value: 'awaiting_payment', label: 'بانتظار الدفع' },
+  { value: 'confirmed', label: 'تم تأكيد الطلب' },
+  { value: 'preparing', label: 'جاري التحضير' },
+  { value: 'out_for_delivery', label: 'في الطريق للعميل' },
+  { value: 'delivered', label: 'تم التوصيل' },
+  { value: 'cancelled', label: 'ملغي' }
+];
+const ACTIVE = ['confirmed', 'preparing', 'out_for_delivery'];
+const PAY = { unpaid: 'غير مدفوع', paid: 'مدفوع', refunded: 'مسترجع' };
+const TOKEN_KEY = 'tm_admin_token';
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+let allOrders = [], staff = [], settings = {};
+let shown = [], currentView = 'orders', currentId = null, modalPay = 'unpaid', photoData = null, pollTimer = null, busy = false;
+
+const statusLabel = (s) => (STATUSES.find((x) => x.value === s) || { label: s }).label;
+const badge = (s) => s === 'awaiting_payment' ? 'bg-saffron-100 text-saffron-600' : s === 'delivered' ? 'bg-emerald-100 text-emerald-700' : s === 'pending' ? 'bg-amber-100 text-amber-700' : s === 'cancelled' ? 'bg-rose-100 text-rose-700' : 'bg-navy-100 text-navy-700';
+const payBadge = (p) => p === 'paid' ? 'bg-emerald-100 text-emerald-700' : p === 'refunded' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600';
+const orderText = (o) => o.order_type === 'menu' && o.items && o.items.length ? o.items.map((i) => `${i.name} (${i.size}) × ${i.qty}`).join('، ') : (o.service_title || '-');
+
+function toast(msg, ok = true) {
+  const el = $('toast'); el.textContent = msg;
+  el.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] px-5 py-3 rounded-full text-sm font-bold shadow-xl text-white ' + (ok ? 'bg-emerald-600' : 'bg-rose-600');
+  clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.add('hidden'), 3500);
+}
+
+/* ---------- الاتصال بالخادم + تسجيل الدخول ---------- */
+const getToken = () => { try { return sessionStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; } };
+const setToken = (t) => { try { t ? sessionStorage.setItem(TOKEN_KEY, t) : sessionStorage.removeItem(TOKEN_KEY); } catch (e) {} };
+
+async function api(path, method, body) {
+  const headers = {};
+  if (body) headers['Content-Type'] = 'application/json';
+  const t = getToken(); if (t) headers.Authorization = 'Bearer ' + t;
+  let res;
+  try { res = await fetch(path, { method: method || 'GET', headers, body: body ? JSON.stringify(body) : undefined }); }
+  catch (e) { throw new Error('تعذر الاتصال بالخادم'); }
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (res.status === 401 && path !== '/api/admin/login') { showLogin('انتهت الجلسة، سجّل الدخول من جديد'); throw new Error('غير مصرّح'); }
+  if (!res.ok) throw new Error((data && data.error) || 'حدث خطأ');
+  return data;
+}
+function showLogin(msg) {
+  setToken(''); clearInterval(pollTimer);
+  $('loginOverlay').classList.remove('hidden');
+  const e = $('loginErr'); e.textContent = msg || ''; e.classList.toggle('hidden', !msg);
+  $('loginPass').value = ''; $('loginPass').focus();
+}
+async function doLogin() {
+  const btn = $('loginBtn'); btn.disabled = true;
+  try {
+    const { token } = await api('/api/admin/login', 'POST', { password: $('loginPass').value });
+    setToken(token); $('loginOverlay').classList.add('hidden'); $('loginErr').classList.add('hidden');
+    await start();
+  } catch (e) { const el = $('loginErr'); el.textContent = e.message; el.classList.remove('hidden'); }
+  finally { btn.disabled = false; }
+}
+function logout() { showLogin(''); allOrders = []; staff = []; shown = []; render(); }
+
+async function fetchAll() {
+  const [o, s, st] = await Promise.all([api('/api/admin/orders'), api('/api/admin/staff'), api('/api/admin/settings')]);
+  allOrders = o; staff = s; settings = st || {};
+}
+async function refresh(quiet) {
+  if (busy) return;
+  busy = true;
+  const ids0 = new Set(allOrders.map((o) => o.id)), first = !allOrders.length && !ids0.size;
+  const m0 = allOrders.filter((o) => o.meal_status === 'pending').length;
+  try {
+    await fetchAll();
+    applyFilter();
+    if (quiet && !first) {
+      const added = allOrders.filter((o) => !ids0.has(o.id));
+      if (added.length) toast(added[0].order_type === 'subscription' ? '🆕 وصلك اشتراك جديد' : '🆕 وصلك طلب جديد');
+      else if (allOrders.filter((o) => o.meal_status === 'pending').length > m0) toast('🍽️ وصلك طلب أطباق اشتراك جديد');
+    }
+  } catch (e) { if (!quiet && e.message !== 'غير مصرّح') toast(e.message, false); }
+  finally { busy = false; }
+}
+async function manualRefresh() { await refresh(false); toast('تم تحديث البيانات'); }
+async function start() {
+  await refresh(false);
+  clearInterval(pollTimer);
+  pollTimer = setInterval(() => { if (getToken() && !document.hidden) refresh(true); }, 20000);
+}
+
+/* ---------- النطاقات والفلاتر ---------- */
+let rangeKey = 'today', customDate = '';
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+function rangeBounds() {
+  const t = new Date(), base = new Date(t.getFullYear(), t.getMonth(), t.getDate()), sun = addDays(base, -base.getDay());
+  if (rangeKey === 'tomorrow') return [addDays(base, 1), addDays(base, 1)];
+  if (rangeKey === 'after') return [addDays(base, 2), addDays(base, 2)];
+  if (rangeKey === 'week') return [sun, addDays(sun, 6)];
+  if (rangeKey === 'nextweek') return [addDays(sun, 7), addDays(sun, 13)];
+  if (rangeKey === 'custom') { const d = new Date(customDate + 'T00:00:00'); if (!isNaN(d)) return [d, d]; }
+  return [base, base];
+}
+function rangeLabel() {
+  return { today: 'اليوم', tomorrow: 'غداً', after: 'بعد غد', week: 'هذا الأسبوع', nextweek: 'الأسبوع القادم' }[rangeKey] ||
+    new Date(customDate + 'T00:00:00').toLocaleDateString('ar-SA', { day: 'numeric', month: 'long' });
+}
+/* أيام التوصيل الفعلية: الطلب العادي يوم واحد، والاشتراك الأحد–الخميس (5 أيام أسبوعي / 20 شهري) ابتداءً من تاريخ البداية */
+function deliveryDates(o) {
+  const start = new Date((o.booking_date || '') + 'T00:00:00');
+  if (isNaN(start)) return [];
+  if (o.order_type !== 'subscription') return [start];
+  const total = String(o.plan_id || '').startsWith('m') || String(o.service_title || '').includes('شهري') ? 20 : 5, out = [];
+  let d = start;
+  for (let i = 0; out.length < total && i < 120; i++, d = addDays(d, 1)) if (d.getDay() <= 4) out.push(d);
+  return out;
+}
+const inRange = (o, [from, to]) => deliveryDates(o).some((d) => d >= from && d <= to);
+function dayDish(o) {
+  if (o.order_type !== 'subscription' || $('timeFilterSelect').value !== 'today') return '';
+  const [from, to] = rangeBounds();
+  if (from.getTime() !== to.getTime()) return '';
+  const dd = o.meal_plan && o.meal_plan[from.getDay()];
+  return `<div class="text-[10px] font-bold mt-0.5 ${dd ? 'text-emerald-600' : 'text-rose-500'}">🍽️ ${dd ? 'المطلوب: ' + dd.map(esc).join(' + ') : 'لم تُحدَّد الأطباق'}</div>`;
+}
+function syncDateBar() { $('dateBar').classList.toggle('hidden', $('timeFilterSelect').value !== 'today' || ['drivers', 'settings', 'reports'].includes(currentView)); }
+function setRange(k) { rangeKey = k; customDate = ''; $('rangeDate').value = ''; $('timeFilterSelect').value = 'today'; applyFilter(); }
+function setCustomDate(v) { if (!v) return; rangeKey = 'custom'; customDate = v; $('timeFilterSelect').value = 'today'; applyFilter(); }
+function setFilter(v) { $('timeFilterSelect').value = v; applyFilter(); }
+function applyFilter() {
+  const f = $('timeFilterSelect').value;
+  shown = f === 'all' ? [...allOrders] : f === 'new' ? allOrders.filter((o) => o.status === 'pending') : allOrders.filter((o) => inRange(o, rangeBounds()));
+  shown.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  const rl = rangeLabel();
+  const L = {
+    today: ['جدول الطلبات (' + rl + ')', 'العملاء (' + rl + ')', 'طلبات ' + rl, 'العملاء ' + rl],
+    new: ['الطلبات الجديدة (بانتظار المراجعة)', 'العملاء الجدد', 'طلبات جديدة', 'عملاء جدد'],
+    all: ['جدول جميع الطلبات', 'جميع العملاء', 'إجمالي الطلبات', 'إجمالي العملاء']
+  }[f];
+  $('tableTitle').innerText = L[0]; $('clientsTitle').innerText = L[1]; $('lblOrders').innerText = L[2]; $('lblClients').innerText = L[3];
+  document.querySelectorAll('.fbtn').forEach((b) => {
+    const on = b.dataset.f === f;
+    b.classList.toggle('bg-saffron-500', on); b.classList.toggle('text-white', on); b.classList.toggle('shadow', on);
+    b.classList.toggle('text-navy-700', !on); b.classList.toggle('hover:bg-saffron-100', !on);
+  });
+  const n = allOrders.filter((o) => o.status === 'pending').length, c = $('newCount');
+  c.textContent = n; c.classList.toggle('hidden', !n); c.classList.toggle('grid', n > 0); c.classList.toggle('animate-pulse', n > 0);
+  document.querySelectorAll('.rbtn').forEach((b) => {
+    const on = b.dataset.r === rangeKey;
+    b.classList.toggle('bg-navy-700', on); b.classList.toggle('text-white', on); b.classList.toggle('text-navy-700', !on); b.classList.toggle('hover:bg-navy-50', !on);
+  });
+  syncDateBar();
+  render();
+}
+
+function setView(v) {
+  currentView = v;
+  document.querySelectorAll('.navbtn').forEach((b) => b.classList.toggle('active', b.dataset.view === v));
+  ['orders', 'clients', 'kitchen', 'reports', 'drivers', 'settings'].forEach((x) => $('view-' + x).classList.toggle('hidden', x !== v));
+  $('filterBox').classList.toggle('hidden', ['drivers', 'settings', 'kitchen', 'reports'].includes(v));
+  $('addStaffBtn').classList.toggle('hidden', v !== 'drivers');
+  if (v === 'kitchen') $('timeFilterSelect').value = 'today';
+  syncDateBar();
+  const t = {
+    orders: ['الطلبات', 'تابع الاشتراكات وطلبات القائمة، وعيّن المندوب، وحدّث الحالات بسهولة.'],
+    clients: ['العملاء', 'اضغط على أي عميل لعرض طلباته وأطباقه.'],
+    kitchen: ['مطبخ اليوم', 'قائمة التحضير: ماذا يُطبخ وكم الكمية ولمن.'],
+    reports: ['التقارير', 'ملخص المبيعات والأطباق الأكثر طلباً والعملاء.'],
+    drivers: ['المندوبون', 'بطاقات مندوبي التوصيل وحالة مهامهم الحالية.'],
+    settings: ['بيانات الدفع', 'أضف الآيبان مرة واحدة ليُرسل مع كل فاتورة.']
+  }[v];
+  $('pageTitle').textContent = t[0]; $('pageSub').textContent = t[1];
+  if (v === 'settings') loadSettingsForm();
+  applyFilter();
+}
+
+function render() {
+  const valid = shown.filter((o) => o.status !== 'cancelled');
+  const revenue = valid.reduce((a, o) => a + (parseFloat(o.service_price) || 0), 0);
+  $('statRevenue').innerText = revenue + ' ر.س';
+  $('statOrders').innerText = shown.length;
+  $('statClients').innerText = new Set(shown.map((o) => o.client_phone)).size;
+  $('statAvg').innerText = (valid.length ? Math.round(revenue / valid.length) : 0) + ' ر.س';
+  const pending = allOrders.filter((o) => o.status === 'pending').length;
+  $('navPending').textContent = pending; $('navPending').classList.toggle('hidden', !pending);
+  filterOrders(); renderClients(); renderStaff(); renderMealBanner(); renderKitchen(); renderReports();
+}
+
+function renderTable(list) {
+  $('ordersBody').innerHTML = list.length ? list.map((o) => `
+    <tr class="hover:bg-navy-50/60 transition">
+      <td class="p-3.5 font-bold text-saffron-600">#${esc(o.id)}</td>
+      <td class="p-3.5"><div class="font-bold">${esc(o.client_name || '-')}</div><div class="text-[10px] text-navy-400" dir="ltr">${esc(o.client_phone || '-')}</div></td>
+      <td class="p-3.5 max-w-[220px]"><div class="font-medium truncate" title="${esc(orderText(o))}">${esc(orderText(o))}</div><div class="text-[10px] text-navy-400">${o.order_type === 'menu' ? 'طلب من القائمة' : 'اشتراك'}</div>${dayDish(o)}</td>
+      <td class="p-3.5 text-navy-600">${esc(o.booking_date || '-')}<br><span class="text-[10px] text-navy-400">${esc(o.booking_time || '')}</span></td>
+      <td class="p-3.5 font-bold text-emerald-600">${esc(o.service_price || 0)} ر.س</td>
+      <td class="p-3.5"><span class="px-2.5 py-1 rounded-full text-[10px] font-bold ${payBadge(o.payment_status)}">${esc(PAY[o.payment_status] || '-')}</span></td>
+      <td class="p-3.5"><span class="px-2.5 py-1 rounded-full text-[10px] font-bold ${badge(o.status)}">${esc(statusLabel(o.status))}</span>${o.status === 'pending' ? '<div class="mt-1 text-[10px] font-bold text-rose-500">🆕 جديد</div>' : ''}${o.meal_status === 'pending' ? `<div class="mt-1 text-[10px] font-bold text-saffron-600">${o.meal_plan ? '✏️ تعديل أطباق' : '🍽️ اختيار أطباق'}</div>` : ''}</td>
+      <td class="p-3.5 text-center"><button type="button" onclick="openModal('${esc(o.id)}')" class="bg-navy-700 hover:bg-navy-800 text-white text-[11px] font-bold px-3.5 py-1.5 rounded-full transition"><i class="fa-solid fa-gear ml-1"></i> إجراء</button></td>
+    </tr>`).join('') : '<tr><td colspan="8" class="text-center p-8 text-navy-400 font-semibold">لا توجد طلبات لهذه الفترة</td></tr>';
+}
+
+function filterOrders() {
+  const q = $('searchInput').value.toLowerCase().trim();
+  renderTable(q ? shown.filter((o) => String(o.client_name || '').toLowerCase().includes(q) || String(o.client_phone || '').includes(q) || String(o.id || '').toLowerCase().includes(q)) : shown);
+}
+
+function renderClients() {
+  const m = {};
+  shown.forEach((o) => {
+    if (!o.client_phone) return;
+    const c = m[o.client_phone] || (m[o.client_phone] = { name: o.client_name || 'عميل', phone: o.client_phone, n: 0, spent: 0 });
+    c.n++; if (o.status !== 'cancelled') c.spent += parseFloat(o.service_price) || 0;
+  });
+  const list = Object.values(m);
+  $('clientsGrid').innerHTML = list.length ? list.map((c) => `
+    <div onclick="openClient('${esc(c.phone)}')" class="cursor-pointer hover:border-saffron-400 hover:shadow-md transition bg-navy-50/50 border border-navy-100 rounded-3xl p-5 flex items-center gap-4 shadow-sm">
+      <div class="w-12 h-12 rounded-full bg-saffron-100 text-saffron-600 grid place-items-center font-extrabold text-lg shrink-0">${esc((c.name || '?')[0])}</div>
+      <div class="flex-1 min-w-0"><h4 class="text-sm font-bold truncate">${esc(c.name)}</h4><p class="text-[11px] text-navy-400" dir="ltr" style="text-align:right">${esc(c.phone)}</p>
+        <span class="inline-block bg-navy-100 text-navy-700 text-[10px] font-bold px-2 py-0.5 rounded-full mt-1">${c.n} طلب</span></div>
+      <div class="text-left shrink-0"><p class="text-[10px] text-navy-400">إجمالي الإنفاق</p><p class="text-sm font-extrabold text-emerald-600">${c.spent} ر.س</p></div>
+    </div>`).join('') : '<p class="text-sm text-navy-400 sm:col-span-2 xl:col-span-3 p-8 text-center">لا يوجد عملاء لهذه الفترة.</p>';
+}
+
+function renderStaff() {
+  if (currentView !== 'drivers') return;
+  $('staffGrid').innerHTML = staff.length ? staff.map((s) => {
+    const active = allOrders.filter((o) => String(o.driver_id) === String(s.id) && ACTIVE.includes(o.status)).length;
+    return `
+    <div class="bg-white border-2 border-navy-100 rounded-3xl p-5 flex flex-col justify-between shadow-md hover:shadow-lg transition">
+      <div class="flex items-start gap-4">
+        ${s.photo_url ? `<img src="${esc(s.photo_url)}" class="w-20 h-20 rounded-2xl object-cover shrink-0 border-2 border-saffron-300" alt="">` : `<div class="w-20 h-20 rounded-2xl shrink-0 bg-saffron-100 text-saffron-600 grid place-items-center text-3xl font-black">${esc((s.full_name || '?')[0])}</div>`}
+        <div class="flex-1 min-w-0"><h4 class="font-black text-base truncate">${esc(s.full_name)}</h4>
+          <p class="text-xs font-bold text-navy-400 mt-1" dir="ltr" style="text-align:right"><i class="fa-solid fa-phone text-saffron-500 text-[10px]"></i> ${esc(s.phone || '-')}</p></div>
+        <button onclick="deleteStaff('${esc(s.id)}')" class="text-rose-400 hover:text-rose-600 text-sm" title="حذف"><i class="fa-solid fa-trash"></i></button>
+      </div>
+      <div class="mt-4 pt-3 border-t border-navy-50 flex items-center justify-between text-xs font-bold">
+        <span class="text-navy-500">المهام الحالية:</span>
+        <span class="${active ? 'bg-emerald-100 text-emerald-800' : 'bg-navy-50 text-navy-600'} px-3 py-1 rounded-full text-[11px]">${active ? `🚀 ${active} طلب نشط` : '💤 متاح حالياً'}</span>
+      </div>
+    </div>`; }).join('') : '<div class="text-navy-400 p-10 text-center sm:col-span-2 xl:col-span-3 font-bold">لا يوجد مندوبون بعد. اضغط «إضافة مندوب» لإنشاء حساب.</div>';
+}
+
+/* ---------- أدوات مشتركة ---------- */
+function tallyDishes(orders) {
+  const t = {};
+  orders.forEach((o) => {
+    if (o.order_type === 'menu') (o.items || []).forEach((i) => t[i.name] = (t[i.name] || 0) + (+i.qty || 1));
+    else Object.values(o.meal_plan || {}).forEach((a) => a.forEach((n) => t[n] = (t[n] || 0) + 1));
+  });
+  return Object.entries(t).sort((a, b) => b[1] - a[1]);
+}
+
+/* ---------- ملف العميل ---------- */
+function openClient(phone) {
+  const list = allOrders.filter((o) => o.client_phone === phone);
+  if (!list.length) return;
+  const spent = list.filter((o) => o.status !== 'cancelled').reduce((a, o) => a + (+o.service_price || 0), 0);
+  const fav = tallyDishes(list.filter((o) => o.status !== 'cancelled')).slice(0, 3);
+  $('clName').textContent = list[0].client_name || 'عميل'; $('clPhone').textContent = phone;
+  $('clBody').innerHTML = `
+    <div class="grid grid-cols-3 gap-2 text-center text-xs">
+      <div class="bg-navy-50 rounded-2xl p-3"><p class="text-navy-500">الطلبات</p><p class="font-extrabold text-lg">${list.length}</p></div>
+      <div class="bg-navy-50 rounded-2xl p-3"><p class="text-navy-500">الإنفاق</p><p class="font-extrabold text-lg text-emerald-600">${spent}</p></div>
+      <div class="bg-navy-50 rounded-2xl p-3"><p class="text-navy-500">أول طلب</p><p class="font-extrabold text-[11px] pt-1.5">${esc((list[list.length - 1].created_at || '').slice(0, 10))}</p></div>
+    </div>
+    ${fav.length ? `<div class="text-xs"><span class="font-extrabold text-saffron-600">⭐ الأكثر طلباً:</span> ${fav.map(([n, c]) => `${esc(n)} (${c})`).join('، ')}</div>` : ''}
+    ${list.map((o) => {
+      const dishes = o.order_type === 'menu'
+        ? (o.items || []).map((i) => `<li>${esc(i.name)} (${esc(i.size)}) × ${esc(i.qty)}</li>`).join('')
+        : (o.meal_plan && Object.keys(o.meal_plan).length ? DAYS.map((n, d) => o.meal_plan[d] ? `<li><b>${n}:</b> ${o.meal_plan[d].map(esc).join(' + ')}</li>` : '').join('') : '<li class="text-navy-400">لم يحدد أطباقه بعد</li>');
+      return `<div class="border border-navy-100 rounded-2xl p-3 space-y-1.5">
+        <div class="flex justify-between items-center text-xs"><span class="font-black text-saffron-600">#${esc(o.id)}</span>
+          <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${badge(o.status)}">${esc(statusLabel(o.status))}</span></div>
+        <p class="text-[11px] text-navy-500">${esc(o.service_title)} · ${esc(o.booking_date)} · ${esc(o.service_price)} ر.س</p>
+        <ul class="text-xs space-y-0.5 list-disc pr-5">${dishes}</ul>
+        <button type="button" onclick="closeClient(); openModal('${esc(o.id)}')" class="text-[11px] text-navy-600 underline">فتح الطلب</button></div>`;
+    }).join('')}`;
+  $('clientModal').classList.remove('hidden'); $('clientModal').classList.add('flex');
+}
+function closeClient() { $('clientModal').classList.add('hidden'); $('clientModal').classList.remove('flex'); }
+
+/* ---------- مطبخ اليوم ---------- */
+const SLOTS = ['صباحاً', 'ظهراً', 'عصراً', 'مساءً'];
+const slotIdx = (o) => SLOTS.findIndex((s) => String(o.booking_time).startsWith(s));
+function renderKitchen() {
+  if (currentView !== 'kitchen') return;
+  const [from, to] = rangeBounds(); let html = '';
+  for (let day = from; day <= to; day = addDays(day, 1)) {
+    const t = day.getTime(), tot = {}, rows = []; let missing = 0;
+    allOrders.filter((o) => o.status !== 'cancelled' && deliveryDates(o).some((d) => d.getTime() === t)).forEach((o) => {
+      let list = [], note = '';
+      if (o.order_type === 'menu') list = (o.items || []).map((i) => ({ n: i.name, s: i.size, q: +i.qty || 1 }));
+      else {
+        const p = (o.meal_plan || {})[day.getDay()];
+        if (p) list = p.map((n) => ({ n, s: '', q: 1 }));
+        else { missing++; note = o.pending_meal_plan ? 'أطباقه بانتظار قبولك' : 'لم يحدد أطباقه بعد'; }
+      }
+      list.forEach((x) => { const k = x.n + (x.s ? ' (' + x.s + ')' : ''); tot[k] = (tot[k] || 0) + x.q; });
+      rows.push({ o, list, note });
+    });
+    if (!rows.length) continue;
+    rows.sort((a, b) => slotIdx(a.o) - slotIdx(b.o));
+    const totals = Object.entries(tot).sort((a, b) => b[1] - a[1]);
+    html += `<div class="border border-navy-100 rounded-3xl overflow-hidden">
+      <div class="bg-navy-950 text-white px-5 py-3 font-extrabold text-sm">${day.toLocaleDateString('ar-SA', { weekday: 'long', day: 'numeric', month: 'long' })} — ${rows.length} طلب</div>
+      <div class="p-5 space-y-4">
+        ${missing ? `<p class="text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 rounded-xl p-2.5">⚠️ ${missing} اشتراك بدون أطباق معتمدة لهذا اليوم (راجعها قبل التحضير)</p>` : ''}
+        <div><p class="text-xs font-extrabold text-saffron-600 mb-2">🍳 إجمالي التحضير</p>
+          <div class="flex flex-wrap gap-2">${totals.length ? totals.map(([n, q]) => `<span class="bg-saffron-50 border border-saffron-300 rounded-xl px-3 py-1.5 text-xs font-bold">${esc(n)} <b class="text-saffron-600 text-sm">× ${q}</b></span>`).join('') : '<span class="text-xs text-navy-400">لا أطباق محددة</span>'}</div></div>
+        <div class="overflow-x-auto"><table class="w-full text-xs text-right min-w-[560px]">
+          <thead class="text-navy-500 border-b border-navy-100"><tr><th class="py-2">الوقت</th><th>العميل</th><th>الأطباق</th><th>الدفع</th><th>المندوب</th></tr></thead>
+          <tbody class="divide-y divide-navy-50">${rows.map(({ o, list, note }) => `<tr>
+            <td class="py-2 font-bold">${esc(o.booking_time)}</td>
+            <td>${esc(o.client_name)}<div class="text-[10px] text-navy-400" dir="ltr">${esc(o.client_phone)}</div></td>
+            <td>${list.length ? list.map((x) => esc(x.n) + (x.s ? ' (' + esc(x.s) + ')' : '') + (x.q > 1 ? ' ×' + x.q : '')).join('، ') : `<span class="text-rose-500 font-bold">${note}</span>`}</td>
+            <td><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${payBadge(o.payment_status)}">${esc(PAY[o.payment_status] || '-')}</span></td>
+            <td>${esc((staff.find((s) => String(s.id) === String(o.driver_id)) || {}).full_name || '—')}</td></tr>`).join('')}</tbody></table></div>
+      </div></div>`;
+  }
+  $('kitchenBox').innerHTML = html || '<p class="text-center text-navy-400 font-bold p-10">لا توجد طلبات للتحضير في هذه الفترة.</p>';
+}
+
+/* ---------- التقارير ---------- */
+function repList() {
+  const days = +$('repPeriod').value, since = days ? Date.now() - days * 864e5 : 0;
+  return allOrders.filter((o) => new Date(o.created_at).getTime() >= since);
+}
+function renderReports() {
+  if (currentView !== 'reports') return;
+  const list = repList(), valid = list.filter((o) => o.status !== 'cancelled');
+  const sum = (a) => a.reduce((s, o) => s + (+o.service_price || 0), 0);
+  const paid = sum(valid.filter((o) => o.payment_status === 'paid')), unpaid = sum(valid.filter((o) => o.payment_status === 'unpaid'));
+  const bar = (label, val, max, suffix) => `<div class="text-xs"><div class="flex justify-between mb-1"><span class="font-bold">${esc(label)}</span><span class="font-extrabold">${val}${suffix || ''}</span></div><div class="h-2 bg-navy-100 rounded-full"><div class="h-2 bg-saffron-500 rounded-full" style="width:${max ? Math.round(val / max * 100) : 0}%"></div></div></div>`;
+  const card = (t, v, c) => `<div class="bg-navy-50/60 border border-navy-100 rounded-3xl p-4"><p class="text-[11px] text-navy-500 font-bold">${t}</p><p class="text-xl font-extrabold ${c || ''}">${v}</p></div>`;
+  const dishes = tallyDishes(valid).slice(0, 8);
+  const stat = STATUSES.map((s) => [s.label, list.filter((o) => o.status === s.value).length]).filter((x) => x[1]);
+  const cl = {}; valid.forEach((o) => { const c = cl[o.client_phone] || (cl[o.client_phone] = { n: o.client_name, v: 0 }); c.v += +o.service_price || 0; });
+  const top = Object.values(cl).sort((a, b) => b.v - a.v).slice(0, 5);
+  const bySub = sum(valid.filter((o) => o.order_type === 'subscription')), byMenu = sum(valid.filter((o) => o.order_type === 'menu'));
+  const box = (t, inner) => `<div class="border border-navy-100 rounded-3xl p-5 space-y-3"><h4 class="text-sm font-extrabold">${t}</h4>${inner || '<p class="text-xs text-navy-400">لا بيانات</p>'}</div>`;
+  $('repBox').innerHTML = `
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      ${card('إجمالي المبيعات', sum(valid) + ' ر.س')}${card('المحصَّل (مدفوع)', paid + ' ر.س', 'text-emerald-600')}
+      ${card('غير محصَّل', unpaid + ' ر.س', 'text-rose-600')}${card('عدد الطلبات', list.length)}</div>
+    <div class="grid lg:grid-cols-2 gap-4">
+      ${box('🍽️ الأطباق الأكثر طلباً', dishes.map(([n, c]) => bar(n, c, dishes[0][1])).join(''))}
+      ${box('📊 حالات الطلبات', stat.map(([n, c]) => bar(n, c, list.length)).join(''))}
+      ${box('💰 المبيعات حسب النوع', bar('اشتراكات', bySub, Math.max(bySub, byMenu), ' ر.س') + bar('طلبات القائمة', byMenu, Math.max(bySub, byMenu), ' ر.س'))}
+      ${box('🏆 أفضل العملاء', top.map((c) => bar(c.n || 'عميل', c.v, top[0].v, ' ر.س')).join(''))}</div>`;
+}
+function exportCSV() {
+  const q = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const head = ['رقم الطلب', 'العميل', 'الجوال', 'النوع', 'الطلب', 'تاريخ التوصيل', 'المبلغ', 'الدفع', 'الحالة', 'تاريخ الإنشاء'];
+  const rows = repList().map((o) => [o.id, o.client_name, o.client_phone, o.order_type === 'menu' ? 'قائمة' : 'اشتراك', orderText(o), o.booking_date, o.service_price, PAY[o.payment_status], statusLabel(o.status), o.created_at]);
+  const blob = new Blob(['\ufeff' + [head, ...rows].map((r) => r.map(q).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'orders-' + new Date().toISOString().slice(0, 10) + '.csv'; a.click();
+}
+
+/* ---------- المندوبون ---------- */
+function openStaffModal() {
+  photoData = null; ['sName', 'sPhone', 'sPass'].forEach((i) => $(i).value = '');
+  $('photoPreview').src = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=='; $('photoInput').value = '';
+  $('staffModal').classList.remove('hidden'); $('staffModal').classList.add('flex'); $('sName').focus();
+}
+function closeStaffModal() { $('staffModal').classList.add('hidden'); $('staffModal').classList.remove('flex'); }
+function genPass() { const c = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789#@!'; return [...crypto.getRandomValues(new Uint32Array(10))].map((x) => c[x % c.length]).join(''); }
+function handlePhotoSelect(e) {
+  const f = e.target.files[0]; if (!f) return;
+  const fr = new FileReader();
+  fr.onload = () => { const im = new Image(); im.onload = () => {
+    const s = 256, cv = document.createElement('canvas'); cv.width = cv.height = s; const m = Math.min(im.width, im.height);
+    cv.getContext('2d').drawImage(im, (im.width - m) / 2, (im.height - m) / 2, m, m, 0, 0, s, s);
+    photoData = cv.toDataURL('image/jpeg', 0.8); $('photoPreview').src = photoData; }; im.src = fr.result; };
+  fr.onerror = () => toast('فشل تحميل الصورة', false); fr.readAsDataURL(f);
+}
+async function saveStaff() {
+  const name = $('sName').value.trim(), phone = $('sPhone').value.trim(), pass = $('sPass').value.trim();
+  if (!name) return toast('يرجى كتابة الاسم الكامل', false);
+  if (!/^\+?\d{9,15}$/.test(phone)) return toast('رقم الجوال غير صحيح', false);
+  if (pass.length < 6) return toast('كلمة المرور 6 أحرف على الأقل', false);
+  const btn = $('saveStaffBtn'); btn.disabled = true;
+  try {
+    await api('/api/admin/staff', 'POST', { full_name: name, phone, password: pass, photo_url: photoData || '' });
+    closeStaffModal(); await refresh(false); toast('✅ تمت إضافة المندوب');
+  } catch (e) { toast(e.message, false); }
+  finally { btn.disabled = false; }
+}
+async function deleteStaff(id) {
+  if (!confirm('حذف هذا المندوب؟')) return;
+  try { await api('/api/admin/staff/' + encodeURIComponent(id), 'DELETE'); await refresh(false); toast('🗑️ تم حذف المندوب'); }
+  catch (e) { toast(e.message, false); }
+}
+
+/* ---------- نافذة الطلب ---------- */
+const FIELD = 'w-full bg-white border border-navy-200 rounded-xl px-3 py-2 text-xs font-semibold text-navy-800 focus:outline-none focus:border-saffron-500 shadow-sm';
+const row = (l, v) => `<div class="flex justify-between gap-3 text-xs"><span class="text-navy-500 shrink-0">${l}</span><span class="text-navy-900 font-bold text-left">${v}</span></div>`;
+
+function openModal(id) {
+  const o = allOrders.find((x) => String(x.id) === String(id)); if (!o) return;
+  currentId = o.id; modalPay = o.payment_status || 'unpaid';
+  const link = ((o.location_address || '').match(/https?:\/\/[^\s|]+/) || [''])[0];
+  const addr = (o.location_address || '').replace(/\s*\|?\s*https?:\/\/[^\s|]+/, '').trim();
+  const phone = String(o.client_phone || ''), wa = /^05\d{8}$/.test(phone) ? 'https://wa.me/966' + phone.slice(1) : '';
+  const created = o.created_at ? new Date(o.created_at).toLocaleString('ar-SA', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : '-';
+  const items = o.order_type === 'menu' && o.items && o.items.length
+    ? `<ul class="space-y-1 pt-1">${o.items.map((i) => `<li class="flex justify-between text-xs bg-white border border-navy-100 rounded-lg px-2.5 py-1.5"><span class="font-bold">${esc(i.name)} (${esc(i.size)}) × ${esc(i.qty)}</span><span class="text-emerald-600 font-bold">${i.price * i.qty} ر.س</span></li>`).join('')}</ul>` : '';
+  $('modalSubtitle').textContent = '#' + o.id;
+  $('modalBody').innerHTML = `
+    <section class="bg-navy-50/60 border border-navy-100 rounded-2xl p-4 space-y-2.5">
+      <h4 class="text-xs font-extrabold text-saffron-600 flex items-center gap-2"><i class="fa-solid fa-user"></i> معلومات العميل</h4>
+      ${row('الاسم', esc(o.client_name || '-'))}${row('الجوال', `<span dir="ltr">${esc(phone || '-')}</span>`)}
+      ${phone ? `<div class="flex gap-2 pt-1"><a href="tel:${esc(phone)}" class="flex-1 text-center text-[11px] font-bold bg-white hover:bg-navy-50 border border-navy-200 rounded-lg py-1.5"><i class="fa-solid fa-phone ml-1"></i> اتصال</a>
+      ${wa ? `<a href="${esc(wa)}" target="_blank" rel="noopener" class="flex-1 text-center text-[11px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg py-1.5"><i class="fa-brands fa-whatsapp ml-1"></i> واتساب</a>` : ''}</div>` : ''}
+    </section>
+    <section class="bg-navy-50/60 border border-navy-100 rounded-2xl p-4 space-y-2.5">
+      <h4 class="text-xs font-extrabold text-saffron-600 flex items-center gap-2"><i class="fa-solid fa-clipboard-list"></i> تفاصيل الطلب</h4>
+      ${row('النوع', o.order_type === 'menu' ? 'طلب من القائمة' : 'اشتراك')}
+      ${o.order_type === 'menu' ? items : row('الباقة', esc(o.service_title || '-'))}
+      ${row('المبلغ الإجمالي', esc(o.service_price || 0) + ' ر.س')}
+      ${row('التوصيل', `${esc(o.booking_date || '-')} (${esc(o.booking_time || '-')})`)}
+      ${row('وقت الطلب', esc(created))}
+      <div class="pt-2 border-t border-navy-100 space-y-1.5">
+        <div class="text-xs"><span class="text-navy-500"><i class="fa-solid fa-location-dot ml-1 text-saffron-500"></i>العنوان:</span> <span class="font-bold">${esc(addr || '-')}</span></div>
+        ${link ? `<a href="${esc(link)}" target="_blank" rel="noopener" class="inline-block text-[11px] text-saffron-600 font-bold underline">📍 فتح الموقع على خريطة جوجل</a>` : ''}
+      </div>
+    </section>
+    <section class="bg-navy-50/60 border border-navy-100 rounded-2xl p-4 space-y-3">
+      <h4 class="text-xs font-extrabold text-saffron-600 flex items-center gap-2"><i class="fa-solid fa-motorcycle"></i> المندوب وحالة الطلب</h4>
+      <label class="block text-[11px] font-bold text-navy-600">المندوب
+        <select id="modalDriver" class="${FIELD} mt-1"><option value="">-- اختر المندوب --</option>${staff.map((s) => `<option value="${esc(s.id)}" ${String(s.id) === String(o.driver_id) ? 'selected' : ''}>${esc(s.full_name)}${s.phone ? ' - ' + esc(s.phone) : ''}</option>`).join('')}</select></label>
+      <label class="block text-[11px] font-bold text-navy-600">حالة الطلب
+        <select id="modalStatus" class="${FIELD} mt-1">${STATUSES.map((s) => `<option value="${s.value}" ${s.value === o.status ? 'selected' : ''}>${s.label}</option>`).join('')}</select></label>
+      <div><span class="block text-[11px] font-bold text-navy-600 mb-1.5">حالة الدفع</span>
+        <div class="grid grid-cols-3 gap-2">${['unpaid', 'paid', 'refunded'].map((p) => `<button type="button" id="pay_${p}" onclick="setPay('${p}')" class="py-2 rounded-xl text-xs font-bold border transition"></button>`).join('')}</div></div>
+    </section>
+    ${mealSection(o)}${invoiceSection(o)}
+    <div class="flex gap-2 pt-2">
+      <button type="button" onclick="saveModal()" class="flex-1 bg-gradient-to-r from-saffron-500 to-saffron-600 text-white font-extrabold rounded-xl py-2.5 text-xs transition shadow-md">حفظ التعديلات</button>
+      <button type="button" onclick="deleteOrder('${esc(o.id)}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-bold rounded-xl px-4 py-2.5 text-xs transition">حذف</button>
+    </div>`;
+  setPay(modalPay);
+  $('modal').classList.remove('hidden'); $('modal').classList.add('flex');
+}
+function setPay(p) {
+  modalPay = p;
+  ['unpaid', 'paid', 'refunded'].forEach((x) => { const b = $('pay_' + x); if (!b) return;
+    b.textContent = PAY[x];
+    b.className = 'py-2 rounded-xl text-xs font-bold border transition ' + (x === p ? 'bg-navy-700 text-white border-navy-700 shadow-sm' : 'bg-white text-navy-600 border-navy-200 hover:bg-navy-50'); });
+}
+function closeModal() { $('modal').classList.add('hidden'); $('modal').classList.remove('flex'); currentId = null; }
+async function saveModal() {
+  if (!currentId) return;
+  try {
+    await api('/api/admin/orders/' + encodeURIComponent(currentId), 'PATCH', { driver_id: $('modalDriver').value || '', status: $('modalStatus').value, payment_status: modalPay });
+    await refresh(false); closeModal(); toast('✅ تم تحديث الطلب');
+  } catch (e) { toast(e.message, false); }
+}
+async function deleteOrder(id) {
+  if (!confirm('هل أنت متأكد من حذف هذا الطلب نهائياً؟')) return;
+  try { await api('/api/admin/orders/' + encodeURIComponent(id), 'DELETE'); await refresh(false); closeModal(); toast('🗑️ تم حذف الطلب'); }
+  catch (e) { toast(e.message, false); }
+}
+
+/* ---------- بيانات الدفع والفاتورة ---------- */
+const getSettings = () => settings || {};
+const fmtIban = (i) => String(i || '').replace(/\s+/g, '').replace(/(.{4})/g, '$1 ').trim();
+
+function buildInvoice(o, s) {
+  const lines = [`السلام عليكم ${o.client_name || ''} 🌿`, `فاتورة طلبك رقم #${o.id} من طعم زمان 🍲`, '', `الطلب: ${orderText(o)}`, `موعد التوصيل: ${o.booking_date || '-'} (${o.booking_time || '-'})`,
+    `المبلغ الإجمالي: ${o.service_price || 0} ريال`, '', 'للدفع يرجى التحويل إلى:'];
+  if (s.bank) lines.push(`البنك: ${s.bank}`);
+  if (s.holder) lines.push(`اسم الحساب: ${s.holder}`);
+  lines.push(`الآيبان: ${fmtIban(s.iban) || '—'}`);
+  if (s.note) lines.push('', s.note);
+  lines.push('', 'نرجو إرسال صورة الحوالة بعد التحويل 🙏', 'شكراً لثقتكم بطعم زمان');
+  return lines.join('\n');
+}
+function loadSettingsForm() {
+  const s = getSettings();
+  $('setBank').value = s.bank || ''; $('setHolder').value = s.holder || ''; $('setIban').value = fmtIban(s.iban); $('setNote').value = s.note || '';
+  renderPreview();
+}
+function renderPreview() {
+  const s = { bank: $('setBank').value.trim(), holder: $('setHolder').value.trim(), iban: $('setIban').value, note: $('setNote').value.trim() };
+  $('invoicePreview').textContent = buildInvoice({ id: 'SFR-000000', client_name: 'اسم العميل', booking_date: '2026-01-01', booking_time: 'ظهراً', service_price: 100, order_type: 'subscription', service_title: 'اشتراك أسبوعي — وجبة واحدة يومياً' }, s);
+}
+async function saveSettings() {
+  const iban = $('setIban').value.replace(/\s+/g, '').toUpperCase();
+  if (!/^SA\d{22}$/.test(iban)) return toast('الآيبان السعودي يبدأ بـ SA ويتبعه 22 رقماً', false);
+  try {
+    settings = await api('/api/admin/settings', 'PUT', { bank: $('setBank').value.trim(), holder: $('setHolder').value.trim(), iban, note: $('setNote').value.trim() });
+    $('setIban').value = fmtIban(settings.iban); renderPreview(); toast('✅ تم حفظ بيانات الدفع');
+  } catch (e) { toast(e.message, false); }
+}
+function invoiceSection(o) {
+  const ok = !!getSettings().iban, dis = ok ? '' : 'disabled';
+  const sent = o.invoice_sent_at ? ' · آخر تأكيد إرسال: ' + esc(new Date(o.invoice_sent_at).toLocaleString('ar-SA', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })) : '';
+  return `<section class="bg-navy-50/60 border border-navy-100 rounded-2xl p-4 space-y-2.5">
+    <h4 class="text-xs font-extrabold text-saffron-600 flex items-center gap-2"><i class="fa-solid fa-file-invoice-dollar"></i> الفاتورة</h4>
+    ${ok ? '' : '<p class="text-[11px] font-bold text-rose-500">أضف الآيبان أولاً من «بيانات الدفع» في القائمة الجانبية.</p>'}
+    <p class="text-[11px] font-bold text-navy-600">1) أرسل الفاتورة بإحدى الطرق:</p>
+    <div class="grid grid-cols-3 gap-2">
+      <button type="button" onclick="openInvoiceWA('${esc(o.id)}')" ${dis} class="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-[11px] font-extrabold rounded-xl py-2.5 transition"><i class="fa-brands fa-whatsapp ml-1"></i> واتساب</button>
+      <button type="button" onclick="openInvoiceSMS('${esc(o.id)}')" ${dis} class="bg-navy-700 hover:bg-navy-800 disabled:opacity-40 text-white text-[11px] font-extrabold rounded-xl py-2.5 transition"><i class="fa-solid fa-comment-sms ml-1"></i> رسالة SMS</button>
+      <button type="button" onclick="copyInvoice('${esc(o.id)}')" ${dis} class="bg-white border border-navy-200 disabled:opacity-40 text-navy-700 text-[11px] font-bold rounded-xl py-2.5">نسخ النص</button>
+    </div>
+    <p class="text-[11px] font-bold text-navy-600 pt-1">2) بعد أن ترسلها فعلاً اضغط:</p>
+    <button type="button" onclick="markInvoiceSent('${esc(o.id)}')" ${dis} class="w-full bg-saffron-500 hover:bg-saffron-600 disabled:opacity-40 text-white text-[11px] font-extrabold rounded-xl py-2.5 transition">✅ تم إرسال الفاتورة — حوّل الحالة إلى «بانتظار الدفع»</button>
+    <p class="text-[10px] text-navy-400 leading-relaxed">الأزرار تفتح الرسالة جاهزة فقط، ولا يمكن للنظام معرفة إن كان للرقم واتساب أو إن أُرسلت الرسالة، لذلك الحالة لا تتغير إلا بضغطك على «تم إرسال الفاتورة».${sent}</p>
+  </section>`;
+}
+function invoiceCtx(id) {
+  const o = allOrders.find((x) => String(x.id) === String(id)), s = getSettings();
+  if (!o || !s.iban) { toast('أضف الآيبان أولاً', false); return null; }
+  const phone = String(o.client_phone || '');
+  return { o, phone, msg: buildInvoice(o, s), valid: /^05\d{8}$/.test(phone) };
+}
+function openInvoiceWA(id) {
+  const c = invoiceCtx(id); if (!c) return;
+  if (!c.valid) { navigator.clipboard && navigator.clipboard.writeText(c.msg); return toast('رقم الجوال غير صالح لواتساب، تم نسخ نص الفاتورة', false); }
+  window.open('https://wa.me/966' + c.phone.slice(1) + '?text=' + encodeURIComponent(c.msg), '_blank');
+  toast('افتح الرسالة وأرسلها، فإن لم يكن للرقم واتساب استخدم SMS أو انسخ النص');
+}
+function openInvoiceSMS(id) {
+  const c = invoiceCtx(id); if (!c) return;
+  if (!c.phone) return toast('لا يوجد رقم جوال', false);
+  window.open('sms:' + c.phone + '?&body=' + encodeURIComponent(c.msg), '_self');
+}
+async function markInvoiceSent(id) {
+  const sel = $('modalStatus').value;
+  try {
+    await api('/api/admin/orders/' + encodeURIComponent(id), 'PATCH', {
+      driver_id: $('modalDriver').value || '', payment_status: modalPay,
+      status: (sel === 'pending' || sel === 'confirmed') ? 'awaiting_payment' : sel, invoice_sent: true
+    });
+    await refresh(false); openModal(id);
+    toast('📄 تم تسجيل إرسال الفاتورة — الحالة: بانتظار الدفع');
+  } catch (e) { toast(e.message, false); }
+}
+function copyInvoice(id) {
+  const o = allOrders.find((x) => String(x.id) === String(id));
+  if (o && navigator.clipboard) navigator.clipboard.writeText(buildInvoice(o, getSettings())).then(() => toast('تم نسخ نص الفاتورة'));
+}
+
+/* ---------- طلبات تعديل أطباق الاشتراك ---------- */
+const planHtml = (p) => (p ? DAYS.map((n, d) => p[d] ? `<div class="flex justify-between gap-3 text-xs"><span class="text-navy-500">${n}</span><span class="font-bold text-left">${p[d].map(esc).join(' + ')}</span></div>` : '').join('') : '') || '<p class="text-[11px] text-navy-400">—</p>';
+function mealSection(o) {
+  if (o.order_type !== 'subscription') return '';
+  const pending = o.meal_status === 'pending';
+  return `<section class="bg-saffron-50/70 border ${pending ? 'border-saffron-400' : 'border-navy-100'} rounded-2xl p-4 space-y-2.5">
+    <h4 class="text-xs font-extrabold text-saffron-600 flex items-center gap-2"><i class="fa-solid fa-utensils"></i> أطباق الاشتراك</h4>
+    ${pending ? `<p class="text-[11px] font-black text-saffron-600">${o.meal_plan ? 'طلب تعديل بانتظار قبولك:' : 'اختيار الأطباق الأول بانتظار قبولك:'}</p>${planHtml(o.pending_meal_plan)}
+      ${o.meal_plan ? `<p class="text-[11px] font-bold text-navy-500 pt-2 border-t border-saffron-100">المعتمد حالياً:</p>${planHtml(o.meal_plan)}` : ''}
+      <button type="button" onclick="acceptMeals('${esc(o.id)}')" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-xl py-2.5 transition">✅ قبول الطلب وإشعار العميل</button>`
+    : (o.meal_plan ? planHtml(o.meal_plan) : '<p class="text-[11px] text-navy-400">لم يحدد العميل أطباقه بعد.</p>')}
+  </section>`;
+}
+async function acceptMeals(id) {
+  try {
+    await api('/api/admin/orders/' + encodeURIComponent(id) + '/accept-meals', 'POST');
+    await refresh(false); openModal(id); toast('✅ تم القبول وسيصل العميل إشعار «تم قبول الطلب»');
+  } catch (e) { toast(e.message, false); }
+}
+function renderMealBanner() {
+  const meals = allOrders.filter((o) => o.meal_status === 'pending');
+  $('navMeal').textContent = meals.length; $('navMeal').classList.toggle('hidden', !meals.length);
+  const el = $('mealBanner'); el.classList.toggle('hidden', !meals.length);
+  el.innerHTML = meals.length ? `<p class="text-sm font-black text-saffron-600">🍽️ ${meals.length} طلب أطباق اشتراك بانتظار القبول</p>` + meals.map((o) => `
+    <div class="flex items-center justify-between gap-3 bg-white rounded-2xl border border-saffron-300 px-4 py-2.5 text-xs">
+      <span class="font-bold">${o.meal_plan ? '✏️ تعديل أطباق' : '🍽️ اختيار أطباق'} · #${esc(o.id)} · ${esc(o.client_name || '-')}</span>
+      <button type="button" onclick="openModal('${esc(o.id)}')" class="bg-saffron-500 hover:bg-saffron-600 text-white font-bold px-3.5 py-1.5 rounded-full">قبول / مراجعة</button></div>`).join('') : '';
+}
+
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeStaffModal(); closeClient(); } });
+window.addEventListener('DOMContentLoaded', () => {
+  if (getToken()) { $('loginOverlay').classList.add('hidden'); start(); }
+  else { $('loginPass').focus(); applyFilter(); }
+});
+</script>
+</body>
+</html>
