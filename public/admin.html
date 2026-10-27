@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>لوحة إدارة طعم زمان</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800&family=Alexandria:wght@300;400;600;700&display=swap" rel="stylesheet">
 <script>
@@ -30,6 +32,11 @@ body { font-family: 'Alexandria', 'Tajawal', sans-serif; background: #f8fafc; co
 .field-dark { background: rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.2); color:#fff; border-radius:14px; padding:.65rem .9rem; width:100%; outline:none; }
 .field-dark:focus { border-color:#fff; box-shadow:0 0 0 3px rgba(255,255,255,.2); }
 .field-dark::placeholder { color: rgba(255,255,255,.5); }
+#miniMap, #bigMap { z-index: 0; direction: ltr; }
+.drv-pin { width:36px; height:36px; border-radius:50%; border:3px solid #fff; color:#fff; font-weight:800; font-size:14px; display:grid; place-items:center; box-shadow:0 2px 8px rgba(0,0,0,.4); }
+.drv-pin.live { animation: pulseRing 1.8s infinite; }
+@keyframes pulseRing { 0% { box-shadow:0 0 0 0 rgba(5,150,105,.6); } 70% { box-shadow:0 0 0 14px rgba(5,150,105,0); } 100% { box-shadow:0 0 0 0 rgba(5,150,105,0); } }
+.ord-pin { font-size:22px; line-height:1; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
 @media print { aside, #filterBox, #dateBar, .no-print { display:none !important; } body { padding:0; background:#fff; } main { box-shadow:none; border:0; } }
 </style>
 </head>
@@ -69,6 +76,7 @@ body { font-family: 'Alexandria', 'Tajawal', sans-serif; background: #f8fafc; co
       </button>
       <button type="button" data-view="clients" onclick="setView('clients')" class="navbtn"><i class="fa-solid fa-users"></i><span class="flex-1">العملاء</span></button>
       <button type="button" data-view="kitchen" onclick="setView('kitchen')" class="navbtn"><i class="fa-solid fa-kitchen-set"></i><span class="flex-1">مطبخ اليوم</span></button>
+      <button type="button" data-view="tracking" onclick="setView('tracking')" class="navbtn"><i class="fa-solid fa-location-crosshairs"></i><span class="flex-1">التتبع المباشر</span></button>
       <button type="button" data-view="reports" onclick="setView('reports')" class="navbtn"><i class="fa-solid fa-chart-column"></i><span class="flex-1">التقارير</span></button>
       <button type="button" data-view="drivers" onclick="setView('drivers')" class="navbtn"><i class="fa-solid fa-motorcycle"></i><span class="flex-1">المندوبون</span></button>
       <button type="button" data-view="settings" onclick="setView('settings')" class="navbtn"><i class="fa-solid fa-building-columns"></i><span class="flex-1">بيانات الدفع</span></button>
@@ -133,6 +141,15 @@ body { font-family: 'Alexandria', 'Tajawal', sans-serif; background: #f8fafc; co
         </div>
       </div>
 
+      <!-- خريطة مصغّرة للمندوبين -->
+      <div class="no-print bg-white border border-navy-100 rounded-[28px] p-4 space-y-3 shadow-sm">
+        <div class="flex items-center justify-between gap-3">
+          <h2 class="text-sm font-extrabold text-navy-950 flex items-center gap-2"><i class="fa-solid fa-location-crosshairs text-saffron-500"></i> المندوبون الآن <span id="miniTrackInfo" class="text-[11px] font-bold text-emerald-600"></span></h2>
+          <button type="button" onclick="setView('tracking')" class="text-[11px] font-bold bg-navy-700 hover:bg-navy-800 text-white px-3.5 py-1.5 rounded-full transition">فتح التتبع الكامل</button>
+        </div>
+        <div id="miniMap" class="h-56 rounded-2xl overflow-hidden border border-navy-100 bg-navy-50"></div>
+      </div>
+
       <div class="bg-navy-950 rounded-[28px] p-4 md:p-6 text-white space-y-4 shadow-xl">
         <div class="flex flex-wrap justify-between items-center gap-3">
           <h2 class="text-base font-bold flex items-center gap-2"><i class="fa-solid fa-list-check text-saffron-400"></i><span id="tableTitle">جدول الطلبات (اليوم)</span></h2>
@@ -166,6 +183,24 @@ body { font-family: 'Alexandria', 'Tajawal', sans-serif; background: #f8fafc; co
         <button type="button" onclick="window.print()" class="no-print bg-navy-700 text-white text-xs font-bold px-4 py-2 rounded-full"><i class="fa-solid fa-print ml-1"></i> طباعة</button>
       </div>
       <div id="kitchenBox" class="space-y-6"></div>
+    </section>
+
+    <!-- التتبع المباشر -->
+    <section id="view-tracking" class="hidden space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <p class="text-xs text-navy-500 flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span><span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-600 ml-1"></span>متصل الآن</span>
+          <span><span class="inline-block w-2.5 h-2.5 rounded-full bg-amber-600 ml-1"></span>منذ دقائق</span>
+          <span><span class="inline-block w-2.5 h-2.5 rounded-full bg-slate-400 ml-1"></span>غير متصل</span>
+          <span>📍 موقع تسليم طلب نشط</span>
+        </p>
+        <button type="button" onclick="renderTracking(true)" class="bg-navy-50 hover:bg-navy-100 text-xs font-bold px-4 py-2 rounded-full border border-navy-200 text-navy-700 transition"><i class="fa-solid fa-expand ml-1"></i> عرض الكل</button>
+      </div>
+      <div class="grid lg:grid-cols-3 gap-4">
+        <div id="bigMap" class="lg:col-span-2 h-[460px] lg:h-[560px] rounded-3xl overflow-hidden border border-navy-100 bg-navy-50"></div>
+        <div id="trackList" class="space-y-2.5 lg:max-h-[560px] overflow-y-auto"></div>
+      </div>
+      <p class="text-[11px] text-navy-400 leading-relaxed">يُحدَّث الموقع كل 10 ثوانٍ تقريباً، ويصل فقط من مندوب لديه طلب نشط اليوم وصفحته مفتوحة على جواله.</p>
     </section>
 
     <!-- التقارير -->
@@ -309,7 +344,7 @@ async function api(path, method, body) {
   return data;
 }
 function showLogin(msg) {
-  setToken(''); clearInterval(pollTimer);
+  setToken(''); clearInterval(pollTimer); clearInterval(trackTimer);
   $('loginOverlay').classList.remove('hidden');
   const e = $('loginErr'); e.textContent = msg || ''; e.classList.toggle('hidden', !msg);
   $('loginPass').value = ''; $('loginPass').focus();
@@ -350,6 +385,8 @@ async function start() {
   await refresh(false);
   clearInterval(pollTimer);
   pollTimer = setInterval(() => { if (getToken() && !document.hidden) refresh(true); }, 20000);
+  clearInterval(trackTimer);
+  trackTimer = setInterval(refreshLocations, 10000);
 }
 
 /* ---------- النطاقات والفلاتر ---------- */
@@ -393,7 +430,7 @@ function deliveryProgress(o) {
   if (!total || !done) return '';
   return `<div class="text-[10px] font-bold mt-0.5 text-indigo-600">🚚 تم توصيل ${done} من ${total} أيام</div>`;
 }
-function syncDateBar() { $('dateBar').classList.toggle('hidden', $('timeFilterSelect').value !== 'today' || ['drivers', 'settings', 'reports'].includes(currentView)); }
+function syncDateBar() { $('dateBar').classList.toggle('hidden', $('timeFilterSelect').value !== 'today' || ['drivers', 'settings', 'reports', 'tracking'].includes(currentView)); }
 function setRange(k) { rangeKey = k; customDate = ''; $('rangeDate').value = ''; $('timeFilterSelect').value = 'today'; applyFilter(); }
 function setCustomDate(v) { if (!v) return; rangeKey = 'custom'; customDate = v; $('timeFilterSelect').value = 'today'; applyFilter(); }
 function setFilter(v) { $('timeFilterSelect').value = v; applyFilter(); }
@@ -426,8 +463,8 @@ function applyFilter() {
 function setView(v) {
   currentView = v;
   document.querySelectorAll('.navbtn').forEach((b) => b.classList.toggle('active', b.dataset.view === v));
-  ['orders', 'clients', 'kitchen', 'reports', 'drivers', 'settings'].forEach((x) => $('view-' + x).classList.toggle('hidden', x !== v));
-  $('filterBox').classList.toggle('hidden', ['drivers', 'settings', 'kitchen', 'reports'].includes(v));
+  ['orders', 'clients', 'kitchen', 'tracking', 'reports', 'drivers', 'settings'].forEach((x) => $('view-' + x).classList.toggle('hidden', x !== v));
+  $('filterBox').classList.toggle('hidden', ['drivers', 'settings', 'kitchen', 'reports', 'tracking'].includes(v));
   $('addStaffBtn').classList.toggle('hidden', v !== 'drivers');
   if (v === 'kitchen') $('timeFilterSelect').value = 'today';
   syncDateBar();
@@ -437,11 +474,14 @@ function setView(v) {
     kitchen: ['مطبخ اليوم', 'قائمة التحضير: ماذا يُطبخ وكم الكمية ولمن.'],
     reports: ['التقارير', 'ملخص المبيعات والأطباق الأكثر طلباً والعملاء.'],
     drivers: ['المندوبون', 'بطاقات مندوبي التوصيل وحالة مهامهم الحالية.'],
+    tracking: ['التتبع المباشر', 'موقع المندوبين الحي ومواقع تسليم طلباتهم النشطة.'],
     settings: ['بيانات الدفع', 'أضف الآيبان مرة واحدة ليُرسل مع كل فاتورة.']
   }[v];
   $('pageTitle').textContent = t[0]; $('pageSub').textContent = t[1];
   if (v === 'settings') loadSettingsForm();
   applyFilter();
+  // الخرائط تحتاج إعادة قياس بعد إظهار الحاوية
+  setTimeout(() => { Object.values(maps).forEach((m) => m.map.invalidateSize()); renderTracking(v === 'tracking'); }, 60);
 }
 
 function render() {
@@ -453,7 +493,7 @@ function render() {
   $('statAvg').innerText = (valid.length ? Math.round(revenue / valid.length) : 0) + ' ر.س';
   const pending = allOrders.filter((o) => o.status === 'pending').length;
   $('navPending').textContent = pending; $('navPending').classList.toggle('hidden', !pending);
-  filterOrders(); renderClients(); renderStaff(); renderMealBanner(); renderKitchen(); renderReports();
+  filterOrders(); renderClients(); renderStaff(); renderMealBanner(); renderKitchen(); renderReports(); renderTracking();
 }
 
 function renderTable(list) {
@@ -686,6 +726,90 @@ function exportCSV() {
   const rows = repList().map((o) => [o.id, o.client_name, o.client_phone, o.order_type === 'menu' ? 'قائمة' : 'اشتراك', orderText(o), o.booking_date, o.delivered_at || '', Object.keys(o.deliveries || {}).join(' | '), o.service_price, PAY[o.payment_status], statusLabel(o.status), o.created_at]);
   const blob = new Blob(['\ufeff' + [head, ...rows].map((r) => r.map(q).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'orders-' + new Date().toISOString().slice(0, 10) + '.csv'; a.click();
+}
+
+/* ---------- التتبع المباشر للمندوبين ---------- */
+var trackTimer = null;
+const maps = {};
+const DEFAULT_CENTER = [21.4858, 39.1925];
+const FRESH_COLOR = { live: '#059669', recent: '#d97706', stale: '#94a3b8' };
+
+function initMap(key, elId) {
+  if (maps[key]) return maps[key];
+  const el = $(elId);
+  if (!window.L || !el) return null;
+  const map = L.map(el, { zoomControl: key === 'big', scrollWheelZoom: key === 'big' }).setView(DEFAULT_CENTER, 11);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+  return (maps[key] = { map, layer: L.layerGroup().addTo(map), fitted: false });
+}
+const todayStr = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
+/* هل هذا الطلب نشط للتوصيل اليوم؟ (نفس منطق الخادم) */
+function activeToday(o) {
+  if (!ACTIVE.includes(o.status)) return false;
+  const t = todayStr();
+  if (o.order_type === 'subscription') return deliveryDates(o).some((d) => d.toLocaleDateString('en-CA') === t) && !(o.deliveries || {})[t];
+  return String(o.booking_date || '') <= t;
+}
+function ago(ts) {
+  if (!ts) return 'لم يرسل موقعه بعد';
+  const s = Math.max(0, Math.round((Date.now() - new Date(ts).getTime()) / 1000));
+  return s < 60 ? 'منذ ' + s + ' ث' : s < 3600 ? 'منذ ' + Math.round(s / 60) + ' د' : 'منذ ' + Math.round(s / 3600) + ' س';
+}
+function freshness(ts) {
+  if (!ts) return 'none';
+  const s = (Date.now() - new Date(ts).getTime()) / 1000;
+  return s < 120 ? 'live' : s < 600 ? 'recent' : 'stale';
+}
+function renderTracking(fit) {
+  const located = staff.filter((s) => s.lat != null && s.lng != null && s.loc_at && Date.now() - new Date(s.loc_at).getTime() < 12 * 3600e3);
+  const orders = allOrders.filter((o) => o.driver_id && o.latitude != null && o.longitude != null && activeToday(o));
+  const live = located.filter((s) => freshness(s.loc_at) === 'live').length;
+  if ($('miniTrackInfo')) $('miniTrackInfo').textContent = '· ' + live + ' متصل الآن';
+  [['mini', 'miniMap', 'orders'], ['big', 'bigMap', 'tracking']].forEach(([key, el, view]) => {
+    if (currentView !== view) return;
+    const m = initMap(key, el); if (!m) return;
+    m.layer.clearLayers();
+    const pts = [];
+    located.forEach((s) => {
+      const f = freshness(s.loc_at), n = orders.filter((o) => String(o.driver_id) === String(s.id)).length;
+      const icon = L.divIcon({ className: '', iconSize: [36, 36], iconAnchor: [18, 18],
+        html: `<div class="drv-pin ${f === 'live' ? 'live' : ''}" style="background:${FRESH_COLOR[f]}">${esc((s.full_name || '?')[0])}</div>` });
+      L.marker([s.lat, s.lng], { icon, zIndexOffset: 1000 }).addTo(m.layer)
+        .bindPopup(`<b>${esc(s.full_name)}</b><br>${esc(ago(s.loc_at))}<br>${n} طلب نشط`);
+      pts.push([s.lat, s.lng]);
+    });
+    orders.forEach((o) => {
+      const d = staff.find((s) => String(s.id) === String(o.driver_id));
+      const icon = L.divIcon({ className: '', iconSize: [24, 24], iconAnchor: [12, 24], html: '<div class="ord-pin">📍</div>' });
+      L.marker([o.latitude, o.longitude], { icon }).addTo(m.layer)
+        .bindPopup(`<b>#${esc(o.id)}</b> · ${esc(o.client_name || '')}<br>${esc(o.booking_time || '')}<br>المندوب: ${esc(d ? d.full_name : '—')}`);
+      pts.push([o.latitude, o.longitude]);
+    });
+    if (pts.length && (fit || !m.fitted)) { m.map.fitBounds(pts, { padding: [40, 40], maxZoom: 15 }); m.fitted = true; }
+  });
+  renderTrackList(orders);
+}
+function renderTrackList(orders) {
+  const el = $('trackList'); if (!el) return;
+  el.innerHTML = staff.length ? staff.map((s) => {
+    const f = freshness(s.loc_at), n = orders.filter((o) => String(o.driver_id) === String(s.id)).length;
+    const label = { live: 'متصل الآن', recent: 'منذ دقائق', stale: 'غير متصل', none: 'لم يرسل موقعه' }[f];
+    return `<button type="button" onclick="focusDriver('${esc(s.id)}')" class="w-full text-right bg-white hover:border-saffron-400 border border-navy-100 rounded-2xl p-3.5 flex items-center gap-3 transition shadow-sm">
+      <span class="w-10 h-10 rounded-full grid place-items-center text-white font-extrabold shrink-0" style="background:${FRESH_COLOR[f] || FRESH_COLOR.stale}">${esc((s.full_name || '?')[0])}</span>
+      <span class="flex-1 min-w-0"><span class="block text-sm font-bold truncate">${esc(s.full_name)}</span>
+        <span class="block text-[11px] text-navy-400">${label}${s.loc_at ? ' · ' + esc(ago(s.loc_at)) : ''}</span></span>
+      <span class="text-[11px] font-bold ${n ? 'bg-emerald-100 text-emerald-800' : 'bg-navy-50 text-navy-500'} px-2.5 py-1 rounded-full shrink-0">${n ? n + ' طلب' : 'متاح'}</span>
+    </button>`; }).join('') : '<p class="text-sm text-navy-400 text-center p-6">لا يوجد مندوبون بعد.</p>';
+}
+function focusDriver(id) {
+  const s = staff.find((x) => String(x.id) === String(id));
+  if (!s || s.lat == null) return toast('لم يرسل هذا المندوب موقعه بعد', false);
+  const m = initMap('big', 'bigMap'); if (m) m.map.setView([s.lat, s.lng], 16);
+}
+/* تحديث خفيف: المندوبون فقط (وليس كل الطلبات) كل 10 ثوانٍ */
+async function refreshLocations() {
+  if (!getToken() || document.hidden || !['orders', 'tracking'].includes(currentView)) return;
+  try { staff = await api('/api/admin/staff'); renderTracking(false); } catch (e) {}
 }
 
 /* ---------- المندوبون ---------- */

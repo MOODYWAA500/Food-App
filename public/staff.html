@@ -57,6 +57,7 @@ body { font-family: 'Alexandria', 'Tajawal', sans-serif; background: #f8fafc; co
       <div>
         <h1 id="staffName" class="font-extrabold text-lg">مندوب التوصيل</h1>
         <p id="staffPhone" class="text-xs text-navy-300" dir="ltr"></p>
+        <p id="trackStatus" class="text-[10px] font-bold text-saffron-300 mt-0.5"></p>
       </div>
     </div>
     <div class="flex items-center gap-2">
@@ -137,6 +138,7 @@ async function api(path, method, body) {
 
 function showLogin(msg) {
   setToken('');
+  stopTracking();
   $('loginOverlay').classList.remove('hidden');
   const e = $('loginErr'); e.textContent = msg || ''; e.classList.toggle('hidden', !msg);
 }
@@ -206,6 +208,7 @@ function renderOrders() {
   $('statPending').textContent = pendingCount;
   $('statDelivered').textContent = deliveredCount;
   $('ordersCount').textContent = orders.length + ' طلبات';
+  syncTracking();
 
   const list = $('ordersList');
   if (!orders.length) {
@@ -276,6 +279,37 @@ function renderOrders() {
     `;
   }).join('');
 }
+
+/* ---------- تتبع الموقع (يعمل فقط عند وجود طلب نشط اليوم) ---------- */
+var geoWatch = null, sendTimer = null, lastPos = null;
+const ACTIVE_ST = ['confirmed', 'preparing', 'out_for_delivery'];
+const hasActive = () => orders.some((o) => ACTIVE_ST.includes(o.status) && (o.order_type !== 'subscription' || (o.today_due && !o.delivered_today)));
+function setTrackMsg(t) { const el = $('trackStatus'); if (el) el.textContent = t || ''; }
+function startTracking() {
+  if (geoWatch !== null) return;
+  if (!navigator.geolocation) return setTrackMsg('⚠️ المتصفح لا يدعم تحديد الموقع');
+  geoWatch = navigator.geolocation.watchPosition(
+    (p) => { lastPos = { lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }; setTrackMsg('📍 التتبع يعمل — أبقِ هذه الصفحة مفتوحة'); },
+    (e) => setTrackMsg(e.code === 1 ? '⚠️ فعّل إذن الموقع لهذا الموقع في المتصفح' : '⚠️ تعذّر تحديد موقعك'),
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
+  sendTimer = setInterval(sendLocation, 10000);
+}
+function stopTracking() {
+  if (geoWatch !== null && navigator.geolocation) navigator.geolocation.clearWatch(geoWatch);
+  geoWatch = null; clearInterval(sendTimer); sendTimer = null; lastPos = null; setTrackMsg('');
+}
+async function sendLocation() {
+  if (!getToken() || !lastPos || !hasActive()) return;
+  try { await api('/api/staff/location', 'POST', lastPos); } catch (e) {}
+}
+function syncTracking() {
+  if (hasActive()) startTracking();
+  else { stopTracking(); setTrackMsg('التتبع يعمل عند وجود طلب نشط'); }
+}
+/* تحديث الطلبات تلقائياً كل دقيقة (بصمت) ليبقى قرار التتبع محدَّثاً */
+setInterval(() => {
+  if (getToken() && !document.hidden) api('/api/staff/orders').then((o) => { orders = o; renderOrders(); }).catch(() => {});
+}, 60000);
 
 window.addEventListener('DOMContentLoaded', async () => {
   const t = getToken();

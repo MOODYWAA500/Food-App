@@ -205,6 +205,11 @@ async function initializeDatabase() {
       -- تتبّع التوصيل: آخر وقت توصيل + سجل توصيل كل يوم { "2026-10-27": "ISO time" }
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS deliveries JSONB DEFAULT '{}'::jsonb;
+      -- تتبع المندوبين: آخر موقع معروف
+      ALTER TABLE staff ADD COLUMN IF NOT EXISTS lat NUMERIC(10,7);
+      ALTER TABLE staff ADD COLUMN IF NOT EXISTS lng NUMERIC(10,7);
+      ALTER TABLE staff ADD COLUMN IF NOT EXISTS accuracy NUMERIC(8,1);
+      ALTER TABLE staff ADD COLUMN IF NOT EXISTS loc_at TIMESTAMPTZ;
     `);
     console.log('✅ Connected to Neon PostgreSQL — tables verified.');
   } finally { client.release(); }
@@ -374,6 +379,23 @@ app.patch('/api/staff/orders/:id', authStaff, h(async (req, res) => {
   res.json(staffView(full.rows[0]));
 }));
 
+/* تتبع المندوب: يستقبل آخر موقع، ولا يحفظه إلا إذا كان عند المندوب طلب نشط اليوم
+   (حفاظاً على خصوصيته خارج أوقات العمل) */
+app.post('/api/staff/location', limit('staff_loc', 90, 60e3), authStaff, h(async (req, res) => {
+  const b = req.body || {}, lat = Number(b.lat), lng = Number(b.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return fail(res, 400, 'إحداثيات غير صحيحة');
+  const acc = Math.min(99999, Math.max(0, Number(b.accuracy) || 0));
+  const { rows } = await pool.query(
+    "SELECT * FROM orders WHERE driver_id = $1 AND status IN ('confirmed','preparing','out_for_delivery')", [req.staffId]);
+  const today = riyadhToday();
+  const active = rows.some((o) => o.order_type === 'subscription'
+    ? deliveryDates(o).includes(today) && !(o.deliveries || {})[today]
+    : String(o.booking_date) <= today);
+  if (!active) return res.json({ ok: true, tracking: false });
+  await pool.query('UPDATE staff SET lat = $1, lng = $2, accuracy = $3, loc_at = now() WHERE id = $4', [lat, lng, acc, req.staffId]);
+  res.json({ ok: true, tracking: true });
+}));
+
 /* ============ API الأدمن ============ */
 app.post('/api/admin/login', limit('login', 10, 15 * 60e3), (req, res) => {
   const a = crypto.createHash('sha256').update(String((req.body && req.body.password) || '')).digest();
@@ -425,7 +447,7 @@ app.delete('/api/admin/orders/:id', auth, h(async (req, res) => {
 }));
 
 app.get('/api/admin/staff', auth, h(async (req, res) => {
-  const { rows } = await pool.query('SELECT id, role, full_name, phone, photo_url, created_at FROM staff ORDER BY created_at');
+  const { rows } = await pool.query('SELECT id, role, full_name, phone, photo_url, created_at, lat, lng, accuracy, loc_at FROM staff ORDER BY created_at');
   res.json(rows);
 }));
 
