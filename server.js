@@ -17,12 +17,49 @@ const ADMIN_SECRET = process.env.ADMIN_SECRET
   || crypto.createHash('sha256').update('tm-secret|' + ADMIN_PASSWORD + '|' + DATABASE_URL).digest('hex');
 if (!process.env.ADMIN_SECRET) console.warn('⚠️ ADMIN_SECRET غير موجود: تم اشتقاق مفتاح ثابت. يُفضّل إضافته في المتغيرات.');
 const PORT = process.env.PORT || 5000;
+const PUBLIC_DIR = path.join(__dirname, 'public');
 
 const app = express();
+app.disable('x-powered-by');
 app.set('trust proxy', 1);
 if (process.env.CORS_ORIGIN) app.use(cors({ origin: process.env.CORS_ORIGIN }));
 app.use(express.json({ limit: '1mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+
+/* ============ ترويسات أمان خفيفة ============ */
+app.use((req, res, next) => {
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'strict-origin-when-cross-origin'
+  });
+  next();
+});
+
+/* ============ PWA: الـ Service Worker والـ manifest وassetlinks (APK/TWA) ============ */
+// الـ Service Worker يجب ألا يُخزَّن مؤقتاً، ومداه الموقع كله
+app.get('/sw.js', (req, res) => {
+  res.set({
+    'Content-Type': 'application/javascript; charset=utf-8',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Service-Worker-Allowed': '/'
+  });
+  res.sendFile(path.join(PUBLIC_DIR, 'sw.js'));
+});
+app.get('/staff-manifest.json', (req, res) => {
+  res.set({ 'Content-Type': 'application/manifest+json; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+  res.sendFile(path.join(PUBLIC_DIR, 'staff-manifest.json'));
+});
+// Express يتجاهل المجلدات المخفية افتراضياً، لذلك نسمح بها صراحةً لـ /.well-known (ملف assetlinks.json)
+app.use('/.well-known', express.static(path.join(PUBLIC_DIR, '.well-known'), {
+  dotfiles: 'allow',
+  setHeaders: (res) => res.set('Content-Type', 'application/json; charset=utf-8')
+}));
+
+app.use(express.static(PUBLIC_DIR, {
+  setHeaders: (res, file) => {
+    if (file.endsWith('.html')) res.set('Cache-Control', 'no-cache');
+    else if (/[\\/]icons[\\/]/.test(file)) res.set('Cache-Control', 'public, max-age=604800');
+  }
+}));
 
 const pool = new Pool({
   connectionString: DATABASE_URL,
@@ -210,6 +247,7 @@ async function initializeDatabase() {
       ALTER TABLE staff ADD COLUMN IF NOT EXISTS lng NUMERIC(10,7);
       ALTER TABLE staff ADD COLUMN IF NOT EXISTS accuracy NUMERIC(8,1);
       ALTER TABLE staff ADD COLUMN IF NOT EXISTS loc_at TIMESTAMPTZ;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_phone ON staff (phone);
     `);
     console.log('✅ Connected to Neon PostgreSQL — tables verified.');
   } finally { client.release(); }
@@ -336,6 +374,13 @@ app.post('/api/staff/login', limit('staff_login', 10, 15 * 60e3), h(async (req, 
   const exp = String(Date.now() + 24 * 3600e3);
   const token = staff.id + '.' + exp + '.' + sign(staff.id + '.' + exp);
   res.json({ token, staff: { id: staff.id, full_name: staff.full_name, phone: staff.phone, photo_url: staff.photo_url } });
+}));
+
+/* التحقق من الجلسة وإرجاع بيانات المندوب (مفيد عند فتح التطبيق المثبّت PWA) */
+app.get('/api/staff/me', authStaff, h(async (req, res) => {
+  const { rows } = await pool.query('SELECT id, full_name, phone, photo_url FROM staff WHERE id = $1', [req.staffId]);
+  if (!rows[0]) return fail(res, 401, 'غير مصرّح للمندوب');
+  res.json(rows[0]);
 }));
 
 app.get('/api/staff/orders', authStaff, h(async (req, res) => {
@@ -506,11 +551,17 @@ app.put('/api/admin/settings', auth, h(async (req, res) => {
 }));
 
 /* ============ الصفحات ============ */
-const page = (f) => (req, res) => res.sendFile(path.join(__dirname, 'public', f));
+const page = (f) => (req, res) => {
+  res.set('Cache-Control', 'no-cache');
+  res.sendFile(path.join(PUBLIC_DIR, f));
+};
 app.use('/api', (req, res) => fail(res, 404, 'المسار غير موجود'));
 app.get('/', page('index.html'));
 app.get('/admin', page('admin.html'));
 app.get('/staff', page('staff.html'));
+app.get('/offline', page('offline.html'));
+// ملفات ثابتة مفقودة (js/css/صور/json...) ترجع 404 بدل صفحة index.html
+app.get(/\.[a-zA-Z0-9]{1,8}$/, (req, res) => res.status(404).type('text/plain').send('Not found'));
 app.get('/{*splat}', page('index.html'));
 app.use((err, req, res, next) => fail(res, 400, 'طلب غير صالح'));
 
