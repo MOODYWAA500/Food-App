@@ -3,9 +3,9 @@
     "relation": ["delegate_permission/common.handle_all_urls"],
     "target": {
       "namespace": "android_app",
-      "package_name": "app.vercel.food_app_sa.twa",
+      "package_name": "sa.taamzaman.staff",
       "sha256_cert_fingerprints": [
-        "AA:BB:CC:...:ZZ"
+        "84:31:F8:2E:BF:1A:BE:AA:8D:E8:87:D9:19:1F:1A:2C:D3:3D:F4:7C:80:82:71:0D:CF:B1:87:6F:E7:BD:58:80"
       ]
     }
   }
