@@ -2,11 +2,22 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>لوحة المندوب - طعم زمان</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>مندوب طعم زمان</title>
+
+<!-- PWA -->
+<link rel="manifest" href="/staff-manifest.json">
+<meta name="theme-color" content="#0b192c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="مندوب طعم زمان">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<link rel="icon" type="image/png" href="/icons/icon-192.png">
+
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800&family=Alexandria:wght@300;400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&family=Alexandria:wght@400;600;700&display=swap" rel="stylesheet">
 <script>
 tailwind.config = {
   theme: { extend: {
@@ -19,311 +30,321 @@ tailwind.config = {
 }
 </script>
 <style>
-body { font-family: 'Alexandria', 'Tajawal', sans-serif; background: #f8fafc; color: #102a43; }
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-thumb { background: #334e68; border-radius: 99px; }
-.glass { background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.16); }
-.field-dark { background: rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.2); color:#fff; border-radius:14px; padding:.65rem .9rem; width:100%; outline:none; }
-.field-dark:focus { border-color:#fff; box-shadow:0 0 0 3px rgba(255,255,255,.2); }
-.field-dark::placeholder { color: rgba(255,255,255,.5); }
+html, body { overscroll-behavior-y: contain; }
+body { font-family: 'Alexandria', 'Tajawal', sans-serif; background: #f0f4f8; color: #102a43; padding-bottom: env(safe-area-inset-bottom); -webkit-tap-highlight-color: transparent; }
+.safe-top { padding-top: max(env(safe-area-inset-top), 0px); }
+.field { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2); color: #fff; border-radius: 14px; padding: .8rem 1rem; width: 100%; outline: none; font-size: 16px; }
+.field:focus { border-color: #fff; box-shadow: 0 0 0 3px rgba(255,255,255,.2); }
+.field::placeholder { color: rgba(255,255,255,.5); }
+.btn { display: flex; align-items: center; justify-content: center; gap: .5rem; border-radius: 14px; font-weight: 800; font-size: .9rem; min-height: 48px; padding: 0 1rem; transition: transform .1s, opacity .15s; }
+.btn:active { transform: scale(.97); }
+.btn:disabled { opacity: .5; }
+.pulse { animation: pulse 1.8s infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(5,150,105,.55); } 70% { box-shadow: 0 0 0 10px rgba(5,150,105,0); } 100% { box-shadow: 0 0 0 0 rgba(5,150,105,0); } }
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } .btn { transition: none; } }
 </style>
 </head>
-<body class="p-3 md:p-6 min-h-screen flex flex-col">
+<body class="min-h-screen">
 
-<!-- تسجيل دخول المندوب -->
-<div id="loginOverlay" class="fixed inset-0 z-[60] bg-navy-950 flex items-center justify-center p-4">
-  <form onsubmit="event.preventDefault(); doLogin()" class="w-full max-w-sm bg-navy-900 text-white rounded-3xl p-8 shadow-2xl space-y-5">
+<!-- تسجيل الدخول -->
+<div id="loginView" class="hidden fixed inset-0 z-50 bg-navy-950 flex items-center justify-center p-5 overflow-y-auto">
+  <form id="loginForm" class="w-full max-w-sm bg-navy-900 text-white rounded-3xl p-7 shadow-2xl space-y-4">
     <div class="text-center space-y-2">
-      <div class="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-saffron-500 to-saffron-600 grid place-items-center text-xl shadow-lg"><i class="fa-solid fa-motorcycle"></i></div>
-      <h2 class="text-xl font-extrabold">بوابة مناديب التوصيل</h2>
-      <p class="text-xs text-navy-300">أدخل رقم الجوال وكلمة المرور الخاصة بك</p>
+      <img src="/icons/icon-192.png" alt="" class="w-16 h-16 mx-auto rounded-2xl">
+      <h1 class="text-xl font-extrabold">دخول المندوب</h1>
+      <p class="text-xs text-navy-300">سجّل برقم جوالك وكلمة المرور التي أعطاك إياها المسؤول</p>
     </div>
-    <div class="space-y-3">
-      <input id="loginPhone" type="tel" dir="ltr" class="field-dark" placeholder="رقم الجوال (05xxxxxxxx)" autocomplete="tel">
-      <input id="loginPass" type="password" class="field-dark" dir="ltr" placeholder="كلمة المرور" autocomplete="current-password">
-    </div>
+    <input id="loginPhone" class="field" dir="ltr" inputmode="tel" autocomplete="username" placeholder="05xxxxxxxx">
+    <input id="loginPass" type="password" class="field" dir="ltr" autocomplete="current-password" placeholder="كلمة المرور">
     <p id="loginErr" class="hidden text-xs font-bold text-rose-300 text-center"></p>
-    <button id="loginBtn" type="submit" class="w-full bg-saffron-500 hover:bg-saffron-600 disabled:opacity-60 text-white font-extrabold rounded-full py-3 transition shadow-md">تسجيل الدخول</button>
+    <button id="loginBtn" type="submit" class="btn w-full bg-saffron-500 hover:bg-saffron-600 text-white">دخول</button>
   </form>
 </div>
 
-<!-- المحتوى الرئيسي -->
-<div class="max-w-4xl mx-auto w-full flex-1 flex flex-col gap-5">
-  <!-- الشريط العلوي -->
-  <header class="bg-navy-950 text-white rounded-3xl p-5 flex flex-wrap items-center justify-between gap-4 shadow-xl">
-    <div class="flex items-center gap-3">
-      <img id="staffPhoto" src="" alt="" class="w-12 h-12 rounded-full object-cover border-2 border-saffron-400 hidden">
-      <div class="w-12 h-12 rounded-full bg-saffron-500 text-white grid place-items-center font-bold text-lg" id="staffAvatar">م</div>
-      <div>
-        <h1 id="staffName" class="font-extrabold text-lg">مندوب التوصيل</h1>
-        <p id="staffPhone" class="text-xs text-navy-300" dir="ltr"></p>
-        <p id="trackStatus" class="text-[10px] font-bold text-saffron-300 mt-0.5"></p>
+<!-- التطبيق -->
+<div id="appView" class="hidden">
+  <header class="bg-navy-950 text-white safe-top sticky top-0 z-30 shadow-lg">
+    <div class="max-w-xl mx-auto px-4 pt-3 pb-2 flex items-center gap-3">
+      <div id="avatar" class="w-11 h-11 rounded-2xl bg-saffron-500 grid place-items-center font-extrabold text-lg shrink-0 overflow-hidden"></div>
+      <div class="flex-1 min-w-0">
+        <div id="driverName" class="font-extrabold truncate"></div>
+        <button id="gpsPill" type="button" class="mt-0.5 text-[11px] font-bold rounded-full px-2.5 py-0.5 bg-white/10 text-navy-200 flex items-center gap-1.5"><span id="gpsDot" class="w-2 h-2 rounded-full bg-slate-400"></span><span id="gpsText">الموقع متوقف</span></button>
       </div>
+      <button id="installBtn" type="button" class="hidden btn !min-h-[40px] !px-3 !text-xs bg-white/10 text-white"><i class="fa-solid fa-download"></i> تثبيت</button>
+      <button id="refreshBtn" type="button" class="w-10 h-10 rounded-xl bg-white/10 grid place-items-center" aria-label="تحديث"><i class="fa-solid fa-rotate"></i></button>
+      <button id="logoutBtn" type="button" class="w-10 h-10 rounded-xl bg-white/10 grid place-items-center" aria-label="تسجيل الخروج"><i class="fa-solid fa-right-from-bracket"></i></button>
     </div>
-    <div class="flex items-center gap-2">
-      <button type="button" onclick="manualRefresh()" class="glass hover:bg-white/20 text-xs px-4 py-2.5 rounded-full font-bold transition flex items-center gap-1.5"><i class="fa-solid fa-rotate"></i> تحديث</button>
-      <button type="button" onclick="logout()" class="glass hover:bg-white/20 text-xs px-4 py-2.5 rounded-full font-bold text-rose-300 transition flex items-center gap-1.5"><i class="fa-solid fa-right-from-bracket"></i> خروج</button>
-    </div>
+    <nav class="max-w-xl mx-auto px-4 pb-3 grid grid-cols-3 gap-2 text-sm font-bold" id="tabs">
+      <button type="button" data-tab="due" class="tab rounded-xl py-2.5">اليوم <span id="cDue" class="mr-1 text-[11px] rounded-full px-1.5"></span></button>
+      <button type="button" data-tab="next" class="tab rounded-xl py-2.5">القادمة <span id="cNext" class="mr-1 text-[11px] rounded-full px-1.5"></span></button>
+      <button type="button" data-tab="done" class="tab rounded-xl py-2.5">المنجزة <span id="cDone" class="mr-1 text-[11px] rounded-full px-1.5"></span></button>
+    </nav>
   </header>
 
-  <!-- إحصائيات سريعة للطلبات -->
-  <div class="grid grid-cols-2 gap-4">
-    <div class="bg-white border border-navy-100 rounded-3xl p-5 shadow-sm flex items-center gap-4">
-      <div class="w-11 h-11 rounded-2xl bg-saffron-100 text-saffron-600 grid place-items-center text-lg"><i class="fa-solid fa-box-open"></i></div>
-      <div>
-        <p class="text-xs text-navy-500 font-semibold">طلبات بانتظار التوصيل</p>
-        <h3 class="text-xl font-extrabold text-navy-950" id="statPending">0</h3>
-      </div>
-    </div>
-    <div class="bg-white border border-navy-100 rounded-3xl p-5 shadow-sm flex items-center gap-4">
-      <div class="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-600 grid place-items-center text-lg"><i class="fa-solid fa-circle-check"></i></div>
-      <div>
-        <p class="text-xs text-navy-500 font-semibold">طلبات تم توصيلها بالكامل</p>
-        <h3 class="text-xl font-extrabold text-navy-950" id="statDelivered">0</h3>
-      </div>
-    </div>
-  </div>
+  <div id="offlineBar" class="hidden bg-rose-600 text-white text-xs font-bold text-center py-2">لا يوجد اتصال. تظهر آخر بيانات محفوظة ولن تُرسل التحديثات.</div>
+  <div id="iosHint" class="hidden max-w-xl mx-auto mt-3 mx-4 bg-saffron-50 border border-saffron-300 rounded-2xl p-3 text-xs font-bold text-navy-700">لتثبيت التطبيق على آيفون: اضغط زر المشاركة <i class="fa-solid fa-arrow-up-from-bracket"></i> ثم «إضافة إلى الشاشة الرئيسية».</div>
 
-  <!-- قائمة الطلبات المسندة -->
-  <section class="bg-white border border-navy-100 rounded-3xl p-5 md:p-6 shadow-xl flex-1 space-y-4">
-    <div class="flex items-center justify-between">
-      <h2 class="font-extrabold text-navy-950 text-base flex items-center gap-2"><i class="fa-solid fa-list-check text-saffron-500"></i> طلبات التوصيل المسندة إليك</h2>
-      <span class="text-xs text-navy-400" id="ordersCount">0 طلبات</span>
-    </div>
-    <div id="ordersList" class="space-y-4">
-      <!-- يتم تعبئتها ديناميكياً -->
-    </div>
-  </section>
+  <main class="max-w-xl mx-auto p-4 space-y-3" id="list"></main>
 </div>
 
 <div id="toast" class="hidden"></div>
 
 <script>
-const TOKEN_KEY = 'tm_staff_token';
-const STATUS_MAP = {
-  pending: 'قيد المراجعة',
-  awaiting_payment: 'بانتظار الدفع',
-  confirmed: 'تم التأكيد',
-  preparing: 'جاري التحضير',
-  out_for_delivery: 'في الطريق للعميل',
-  delivered: 'تم التوصيل',
-  cancelled: 'ملغي'
-};
-
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const DAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
+const ACTIVE = ['confirmed', 'preparing', 'out_for_delivery'];
+const STATUS = { pending: 'قيد المراجعة', awaiting_payment: 'بانتظار الدفع', confirmed: 'جاهز للتوصيل', preparing: 'جاري التحضير', out_for_delivery: 'في الطريق للعميل', delivered: 'تم التوصيل', cancelled: 'ملغي' };
+const PAY = { unpaid: 'غير مدفوع', paid: 'مدفوع', refunded: 'مسترجع' };
+const SLOTS = ['صباحاً', 'ظهراً', 'عصراً', 'مساءً'];
+const TOKEN_KEY = 'tm_staff_token', INFO_KEY = 'tm_staff_info', CACHE_KEY = 'tm_staff_orders';
+
+let orders = [], me = null, tab = 'due', busyIds = new Set(), pollTimer = null, loading = false;
+
+/* ---------- أدوات ---------- */
+const store = {
+  get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} },
+  del: (k) => { try { localStorage.removeItem(k); } catch (e) {} }
+};
+const toArabicDigits = (s) => String(s || '').replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/\s+/g, '');
+const todayStr = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
 
 function toast(msg, ok = true) {
   const el = $('toast'); el.textContent = msg;
-  el.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] px-5 py-3 rounded-full text-sm font-bold shadow-xl text-white ' + (ok ? 'bg-emerald-600' : 'bg-rose-600');
+  el.className = 'fixed left-1/2 -translate-x-1/2 z-[70] px-5 py-3 rounded-full text-sm font-bold shadow-xl text-white max-w-[92vw] text-center ' + (ok ? 'bg-emerald-600' : 'bg-rose-600');
+  el.style.bottom = 'calc(1.5rem + env(safe-area-inset-bottom))';
   clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.add('hidden'), 3500);
 }
-
-const getToken = () => { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch(e) { return ''; } };
-const setToken = (t) => { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch(e) {} };
 
 async function api(path, method, body) {
   const headers = {};
   if (body) headers['Content-Type'] = 'application/json';
-  const t = getToken(); if (t) headers.Authorization = 'Bearer ' + t;
+  const t = store.get(TOKEN_KEY); if (t) headers.Authorization = 'Bearer ' + t;
   let res;
   try { res = await fetch(path, { method: method || 'GET', headers, body: body ? JSON.stringify(body) : undefined }); }
   catch (e) { throw new Error('تعذر الاتصال بالخادم'); }
   let data = null;
-  try { data = await res.json(); } catch(e) {}
+  try { data = await res.json(); } catch (e) {}
   if (res.status === 401 && path !== '/api/staff/login') { showLogin('انتهت الجلسة، سجّل الدخول من جديد'); throw new Error('غير مصرّح'); }
   if (!res.ok) throw new Error((data && data.error) || 'حدث خطأ');
   return data;
 }
 
+/* ---------- الدخول والخروج ---------- */
 function showLogin(msg) {
-  setToken('');
-  stopTracking();
-  $('loginOverlay').classList.remove('hidden');
+  store.del(TOKEN_KEY); stopTracking(); clearInterval(pollTimer);
+  $('appView').classList.add('hidden'); $('loginView').classList.remove('hidden');
   const e = $('loginErr'); e.textContent = msg || ''; e.classList.toggle('hidden', !msg);
+  $('loginPass').value = '';
 }
-
-async function doLogin() {
+function showApp() {
+  $('loginView').classList.add('hidden'); $('appView').classList.remove('hidden');
+  const name = (me && me.full_name) || 'مندوب';
+  $('driverName').textContent = name;
+  $('avatar').innerHTML = me && me.photo_url ? `<img src="${esc(me.photo_url)}" class="w-full h-full object-cover" alt="">` : esc(name[0] || '؟');
+}
+$('loginForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
   const btn = $('loginBtn'); btn.disabled = true;
   try {
-    const phone = $('loginPhone').value.trim();
-    const password = $('loginPass').value;
-    const res = await api('/api/staff/login', 'POST', { phone, password });
-    setToken(res.token);
-    $('loginOverlay').classList.add('hidden');
-    setupStaffInfo(res.staff);
-    await fetchOrders();
-  } catch (e) {
-    const el = $('loginErr'); el.textContent = e.message; el.classList.remove('hidden');
-  } finally {
-    btn.disabled = false;
-  }
-}
+    const { token, staff } = await api('/api/staff/login', 'POST', { phone: toArabicDigits($('loginPhone').value), password: $('loginPass').value });
+    store.set(TOKEN_KEY, token); store.set(INFO_KEY, JSON.stringify(staff)); me = staff;
+    $('loginErr').classList.add('hidden');
+    showApp(); await start();
+  } catch (e) { const el = $('loginErr'); el.textContent = e.message; el.classList.remove('hidden'); }
+  finally { btn.disabled = false; }
+});
+$('logoutBtn').addEventListener('click', () => { if (confirm('تسجيل الخروج؟')) { store.del(CACHE_KEY); store.del(INFO_KEY); orders = []; showLogin(''); } });
+$('refreshBtn').addEventListener('click', async () => { await load(false); toast('تم التحديث'); });
 
-function logout() {
-  setToken('');
-  showLogin();
-}
-
-function setupStaffInfo(st) {
-  if (!st) return;
-  $('staffName').textContent = st.full_name || 'مندوب التوصيل';
-  $('staffPhone').textContent = st.phone || '';
-  $('staffAvatar').textContent = (st.full_name || 'م')[0];
-  if (st.photo_url) {
-    $('staffPhoto').src = st.photo_url;
-    $('staffPhoto').classList.remove('hidden');
-    $('staffAvatar').classList.add('hidden');
-  }
-}
-
-let orders = [];
-async function fetchOrders() {
+/* ---------- تحميل الطلبات ---------- */
+async function load(quiet) {
+  if (loading) return; loading = true;
   try {
     orders = await api('/api/staff/orders');
-    renderOrders();
-  } catch(e) {
-    toast(e.message, false);
-  }
-}
-
-async function manualRefresh() {
-  await fetchOrders();
-  toast('تم تحديث الطلبات');
-}
-
-async function updateStatus(id, newStatus) {
-  try {
-    await api('/api/staff/orders/' + encodeURIComponent(id), 'PATCH', { status: newStatus });
-    toast(newStatus === 'delivered' ? 'تم تسجيل توصيل اليوم بنجاح' : 'تم تحديث حالة الطلب بنجاح');
-    await fetchOrders();
+    store.set(CACHE_KEY, JSON.stringify(orders));
+    $('offlineBar').classList.add('hidden');
   } catch (e) {
-    toast(e.message, false);
-  }
+    if (e.message === 'تعذر الاتصال بالخادم') $('offlineBar').classList.remove('hidden');
+    if (!quiet && e.message !== 'غير مصرّح') toast(e.message, false);
+  } finally { loading = false; render(); }
+}
+async function start() {
+  clearInterval(pollTimer);
+  await load(false);
+  pollTimer = setInterval(() => { if (!document.hidden && store.get(TOKEN_KEY)) load(true); }, 30000);
 }
 
-function renderOrders() {
-  const pendingCount = orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled').length;
-  const deliveredCount = orders.filter(o => o.status === 'delivered').length;
-  $('statPending').textContent = pendingCount;
-  $('statDelivered').textContent = deliveredCount;
-  $('ordersCount').textContent = orders.length + ' طلبات';
-  syncTracking();
+/* ---------- تصنيف الطلبات ---------- */
+const isDone = (o) => o.status === 'delivered' || o.delivered_today === true;
+function isDue(o) {
+  if (['cancelled', 'delivered'].includes(o.status)) return false;
+  if (o.order_type === 'subscription') return !!o.today_due && !o.delivered_today;
+  return String(o.booking_date || '') <= todayStr();
+}
+const slotIdx = (o) => { const i = SLOTS.findIndex((s) => String(o.booking_time || '').startsWith(s)); return i < 0 ? 9 : i; };
+function groups() {
+  const due = orders.filter(isDue).sort((a, b) => slotIdx(a) - slotIdx(b));
+  const done = orders.filter((o) => o.status !== 'cancelled' && isDone(o));
+  const next = orders.filter((o) => o.status !== 'cancelled' && !isDue(o) && !isDone(o)).sort((a, b) => String(a.booking_date).localeCompare(String(b.booking_date)));
+  return { due, next, done };
+}
 
-  const list = $('ordersList');
-  if (!orders.length) {
-    list.innerHTML = `<div class="text-center py-12 text-navy-400 text-sm">لا توجد طلبات مسندة إليك حالياً.</div>`;
-    return;
-  }
-
-  list.innerHTML = orders.map(o => {
-    const itemsDesc = o.order_type === 'menu' && o.items ? o.items.map(i => `${i.name} (${i.size}) × ${i.qty}`).join('، ') : (o.service_title || '-');
-    const isSub = o.order_type === 'subscription';
-    const isDelivered = o.status === 'delivered';
-    const isCancelled = o.status === 'cancelled';
-    const isOut = o.status === 'out_for_delivery';
-    // الاشتراك: لا يُقفل زر «تم التوصيل» إلا إذا سُلِّم اليوم فعلاً
-    const lockDelivered = isDelivered || isCancelled || (isSub && o.delivered_today);
-    const lockOut = isDelivered || isCancelled || isOut || (isSub && o.delivered_today);
-    const pct = o.delivery_total ? Math.round((o.delivered_count / o.delivery_total) * 100) : 0;
-
-    const progress = isSub ? `
-        <div class="bg-white p-3 rounded-xl border border-navy-100 space-y-1.5">
-          <div class="flex justify-between text-xs font-bold">
-            <span class="text-navy-600">🚚 تقدّم التوصيل</span>
-            <span class="text-navy-950">تم توصيل ${o.delivered_count} من ${o.delivery_total} أيام</span>
-          </div>
-          <div class="h-2 bg-navy-100 rounded-full"><div class="h-2 bg-emerald-500 rounded-full" style="width:${pct}%"></div></div>
-          <p class="text-[11px] font-bold ${o.delivered_today ? 'text-emerald-600' : o.today_due ? 'text-saffron-600' : 'text-navy-400'}">
-            ${o.delivered_today ? '✅ تم تسجيل توصيل اليوم' : o.today_due ? '📦 اليوم عليك توصيل هذا الاشتراك' : 'لا يوجد توصيل مجدول اليوم'}
-          </p>
-        </div>` : '';
-
-    return `
-      <div class="border border-navy-100 rounded-2xl p-4 md:p-5 bg-navy-50/40 space-y-3 transition hover:border-navy-200">
-        <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-navy-100">
-          <div class="flex items-center gap-2">
-            <span class="font-mono font-extrabold text-navy-950 text-sm bg-navy-100 px-2.5 py-1 rounded-lg">${esc(o.id)}</span>
-            <span class="text-xs px-2.5 py-1 rounded-full font-bold ${isDelivered ? 'bg-emerald-100 text-emerald-700' : isOut ? 'bg-indigo-100 text-indigo-700' : 'bg-amber-100 text-amber-700'}">${esc(STATUS_MAP[o.status] || o.status)}</span>
-          </div>
-          <div class="text-xs text-navy-500 font-semibold">📅 موعد التوصيل: <span class="text-navy-950 font-bold">${esc(o.booking_date)} (${esc(o.booking_time)})</span></div>
+/* ---------- العرض ---------- */
+function dishesOf(o) {
+  if (o.order_type === 'menu') return (o.items || []).map((i) => `${esc(i.name)} (${esc(i.size)}) × ${esc(i.qty)}`);
+  const d = new Date(todayStr() + 'T00:00:00').getDay(), p = o.meal_plan && o.meal_plan[d];
+  return p ? p.map(esc) : null;
+}
+function card(o) {
+  const addr = String(o.location_address || '').replace(/\s*\|?\s*https?:\/\/[^\s|]+/, '').trim();
+  const hasLoc = o.latitude != null && o.longitude != null;
+  const nav = hasLoc ? `https://www.google.com/maps/dir/?api=1&destination=${o.latitude},${o.longitude}` : '';
+  const phone = String(o.client_phone || ''), wa = /^05\d{8}$/.test(phone) ? 'https://wa.me/966' + phone.slice(1) : '';
+  const due = isDue(o), canAct = due && ACTIVE.includes(o.status), busy = busyIds.has(o.id);
+  const dishes = dishesOf(o);
+  const isSub = o.order_type === 'subscription';
+  const pct = isSub && o.delivery_total ? Math.round((o.delivered_count / o.delivery_total) * 100) : 0;
+  const stCls = o.status === 'out_for_delivery' ? 'bg-indigo-100 text-indigo-700' : o.status === 'delivered' ? 'bg-emerald-100 text-emerald-700' : ACTIVE.includes(o.status) ? 'bg-navy-100 text-navy-700' : 'bg-amber-100 text-amber-700';
+  const payCls = o.payment_status === 'paid' ? 'bg-emerald-100 text-emerald-700' : o.payment_status === 'refunded' ? 'bg-rose-100 text-rose-700' : 'bg-rose-50 text-rose-600';
+  return `<article class="bg-white rounded-3xl border ${due ? 'border-saffron-300' : 'border-navy-100'} shadow-sm overflow-hidden">
+    <div class="p-4 space-y-3">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h3 class="font-extrabold text-base truncate">${esc(o.client_name || 'عميل')}</h3>
+          <p class="text-[11px] font-bold text-saffron-600 mt-0.5">#${esc(o.id)} · ${isSub ? 'اشتراك' : 'طلب من القائمة'}</p>
         </div>
-
-        <div class="grid sm:grid-cols-2 gap-3 text-xs">
-          <div>
-            <p class="text-navy-400 font-semibold mb-0.5">اسم العميل:</p>
-            <p class="font-bold text-navy-950 text-sm">${esc(o.client_name)}</p>
-          </div>
-          <div>
-            <p class="text-navy-400 font-semibold mb-0.5">رقم الجوال:</p>
-            <a href="tel:${esc(o.client_phone)}" dir="ltr" class="font-bold text-saffron-600 hover:underline inline-flex items-center gap-1"><i class="fa-solid fa-phone"></i> ${esc(o.client_phone)}</a>
-          </div>
-        </div>
-
-        <div class="text-xs bg-white p-3 rounded-xl border border-navy-100">
-          <p class="text-navy-400 font-semibold mb-1">تفاصيل الطلب:</p>
-          <p class="font-bold text-navy-900">${esc(itemsDesc)}</p>
-        </div>
-
-        ${progress}
-
-        <div class="flex flex-wrap items-center justify-between gap-2 pt-2">
-          <a href="https://www.google.com/maps?q=${esc(o.latitude)},${esc(o.longitude)}" target="_blank" rel="noopener" class="bg-navy-900 hover:bg-navy-950 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition inline-flex items-center gap-1.5"><i class="fa-solid fa-location-dot text-saffron-400"></i> فتح موقع التوصيل في الخريطة</a>
-
-          <div class="flex items-center gap-2">
-            <button type="button" onclick="updateStatus('${esc(o.id)}', 'out_for_delivery')" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition ${lockOut ? 'opacity-50 pointer-events-none' : ''}"><i class="fa-solid fa-motorcycle ml-1"></i> في الطريق</button>
-            <button type="button" onclick="updateStatus('${esc(o.id)}', 'delivered')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition ${lockDelivered ? 'opacity-50 pointer-events-none' : ''}"><i class="fa-solid fa-circle-check ml-1"></i> ${isSub ? 'تم توصيل اليوم' : 'تم التوصيل'}</button>
-          </div>
+        <div class="text-left shrink-0">
+          <div class="text-sm font-extrabold">${esc(o.booking_time || '')}</div>
+          <div class="text-[11px] text-navy-400">${esc(o.booking_date || '')}</div>
         </div>
       </div>
-    `;
-  }).join('');
+      <div class="flex flex-wrap gap-1.5">
+        <span class="px-2.5 py-1 rounded-full text-[11px] font-bold ${stCls}">${esc(STATUS[o.status] || o.status)}</span>
+        <span class="px-2.5 py-1 rounded-full text-[11px] font-bold ${payCls}">${esc(PAY[o.payment_status] || '-')}${o.payment_status === 'unpaid' ? ' · ' + esc(o.service_price) + ' ر.س' : ''}</span>
+      </div>
+      <div class="bg-navy-50 rounded-2xl p-3 text-xs space-y-1">
+        <p class="font-extrabold text-navy-600"><i class="fa-solid fa-utensils ml-1 text-saffron-500"></i>${isSub ? 'أطباق اليوم' : 'الطلب'}</p>
+        ${dishes && dishes.length ? `<p class="font-bold leading-relaxed">${dishes.join('، ')}</p>` : `<p class="font-bold text-navy-400">${isSub ? 'لا توجد أطباق محددة لهذا اليوم' : '-'}</p>`}
+      </div>
+      ${addr ? `<p class="text-xs"><i class="fa-solid fa-location-dot ml-1 text-saffron-500"></i><span class="font-bold">${esc(addr)}</span></p>` : ''}
+      ${isSub && o.delivery_total ? `<div><div class="flex justify-between text-[11px] font-bold text-indigo-600 mb-1"><span>تم توصيل ${o.delivered_count} من ${o.delivery_total} أيام</span><span>${pct}%</span></div><div class="h-2 bg-navy-100 rounded-full"><div class="h-2 bg-indigo-500 rounded-full" style="width:${pct}%"></div></div></div>` : ''}
+      <div class="grid grid-cols-3 gap-2">
+        ${phone ? `<a href="tel:${esc(phone)}" class="btn !min-h-[44px] bg-navy-50 text-navy-700 border border-navy-200 !text-xs"><i class="fa-solid fa-phone"></i> اتصال</a>` : '<span></span>'}
+        ${wa ? `<a href="${esc(wa)}" target="_blank" rel="noopener" class="btn !min-h-[44px] bg-emerald-50 text-emerald-700 border border-emerald-200 !text-xs"><i class="fa-brands fa-whatsapp"></i> واتساب</a>` : '<span></span>'}
+        ${nav ? `<a href="${esc(nav)}" target="_blank" rel="noopener" class="btn !min-h-[44px] bg-saffron-50 text-saffron-600 border border-saffron-300 !text-xs"><i class="fa-solid fa-diamond-turn-right"></i> الاتجاهات</a>` : '<span></span>'}
+      </div>
+      ${canAct ? `<div class="grid ${o.status === 'out_for_delivery' ? 'grid-cols-1' : 'grid-cols-2'} gap-2">
+        ${o.status === 'out_for_delivery' ? '' : `<button type="button" data-act="route" data-id="${esc(o.id)}" ${busy ? 'disabled' : ''} class="btn bg-navy-700 text-white"><i class="fa-solid fa-motorcycle"></i> في الطريق</button>`}
+        <button type="button" data-act="deliver" data-id="${esc(o.id)}" ${busy ? 'disabled' : ''} class="btn bg-emerald-600 text-white"><i class="fa-solid fa-circle-check"></i> تم التوصيل</button>
+      </div>` : (due ? '<p class="text-[11px] font-bold text-amber-700 bg-amber-50 rounded-xl p-2.5 text-center">لا يمكن التوصيل قبل تأكيد الطلب من المسؤول</p>' : '')}
+    </div>
+  </article>`;
+}
+function render() {
+  const g = groups();
+  const set = (id, n) => { const el = $(id); el.textContent = n || ''; el.classList.toggle('bg-white/20', !!n); };
+  set('cDue', g.due.length); set('cNext', g.next.length); set('cDone', g.done.length);
+  document.querySelectorAll('.tab').forEach((b) => {
+    const on = b.dataset.tab === tab;
+    b.className = 'tab rounded-xl py-2.5 ' + (on ? 'bg-saffron-500 text-white' : 'bg-white/10 text-navy-200');
+  });
+  const list = g[tab];
+  const empty = { due: 'لا توجد توصيلات مستحقة اليوم', next: 'لا توجد طلبات قادمة', done: 'لم تُنجز أي توصيلة بعد' }[tab];
+  $('list').innerHTML = list.length ? list.map(card).join('') : `<div class="text-center text-navy-400 font-bold py-16"><i class="fa-regular fa-face-smile text-3xl mb-3 block"></i>${empty}</div>`;
+  updateTracking(g.due.length > 0);
+}
+$('tabs').addEventListener('click', (e) => { const b = e.target.closest('.tab'); if (b) { tab = b.dataset.tab; render(); window.scrollTo({ top: 0 }); } });
+$('list').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  act(b.dataset.id, b.dataset.act);
+});
+
+async function act(id, kind) {
+  if (busyIds.has(id)) return;
+  const o = orders.find((x) => x.id === id); if (!o) return;
+  if (kind === 'deliver' && !confirm('تأكيد تسليم الطلب للعميل ' + (o.client_name || '') + '؟')) return;
+  busyIds.add(id); render();
+  try {
+    await api('/api/staff/orders/' + encodeURIComponent(id), 'PATCH', { status: kind === 'route' ? 'out_for_delivery' : 'delivered' });
+    toast(kind === 'route' ? '🚀 تم تسجيل: في الطريق' : '✅ تم تسجيل التوصيل');
+    busyIds.delete(id); await load(true);
+  } catch (e) { busyIds.delete(id); toast(e.message, false); render(); }
 }
 
-/* ---------- تتبع الموقع (يعمل فقط عند وجود طلب نشط اليوم) ---------- */
-var geoWatch = null, sendTimer = null, lastPos = null;
-const ACTIVE_ST = ['confirmed', 'preparing', 'out_for_delivery'];
-const hasActive = () => orders.some((o) => ACTIVE_ST.includes(o.status) && (o.order_type !== 'subscription' || (o.today_due && !o.delivered_today)));
-function setTrackMsg(t) { const el = $('trackStatus'); if (el) el.textContent = t || ''; }
+/* ---------- تتبع الموقع (يعمل فقط والتطبيق مفتوح وعند وجود توصيل مستحق) ---------- */
+let watchId = null, lastSent = 0, lastPos = null, wakeLock = null, gpsDenied = false;
+function setGps(state, text) {
+  const dot = $('gpsDot');
+  dot.className = 'w-2 h-2 rounded-full ' + ({ on: 'bg-emerald-500 pulse', wait: 'bg-amber-500', err: 'bg-rose-500', off: 'bg-slate-400' }[state]);
+  $('gpsText').textContent = text;
+}
+function updateTracking(hasDue) {
+  if (hasDue && !gpsDenied) startTracking(); else if (!hasDue) { stopTracking(); setGps('off', 'لا توصيلات حالياً'); }
+}
 function startTracking() {
-  if (geoWatch !== null) return;
-  if (!navigator.geolocation) return setTrackMsg('⚠️ المتصفح لا يدعم تحديد الموقع');
-  geoWatch = navigator.geolocation.watchPosition(
-    (p) => { lastPos = { lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }; setTrackMsg('📍 التتبع يعمل — أبقِ هذه الصفحة مفتوحة'); },
-    (e) => setTrackMsg(e.code === 1 ? '⚠️ فعّل إذن الموقع لهذا الموقع في المتصفح' : '⚠️ تعذّر تحديد موقعك'),
-    { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
-  sendTimer = setInterval(sendLocation, 10000);
+  if (watchId != null) return;
+  if (!navigator.geolocation) return setGps('err', 'الموقع غير مدعوم');
+  setGps('wait', 'جاري تحديد موقعك…');
+  watchId = navigator.geolocation.watchPosition(onPos, onPosErr, { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 });
+  requestWake();
 }
 function stopTracking() {
-  if (geoWatch !== null && navigator.geolocation) navigator.geolocation.clearWatch(geoWatch);
-  geoWatch = null; clearInterval(sendTimer); sendTimer = null; lastPos = null; setTrackMsg('');
+  if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+}
+function onPos(p) {
+  lastPos = p; gpsDenied = false;
+  setGps('on', 'الموقع يعمل');
+  sendLocation();
+}
+function onPosErr(err) {
+  if (err.code === 1) { gpsDenied = true; stopTracking(); setGps('err', 'فعّل إذن الموقع'); }
+  else setGps('wait', 'إشارة GPS ضعيفة');
 }
 async function sendLocation() {
-  if (!getToken() || !lastPos || !hasActive()) return;
-  try { await api('/api/staff/location', 'POST', lastPos); } catch (e) {}
+  if (!lastPos || Date.now() - lastSent < 10000 || !store.get(TOKEN_KEY)) return;
+  lastSent = Date.now();
+  try { await api('/api/staff/location', 'POST', { lat: lastPos.coords.latitude, lng: lastPos.coords.longitude, accuracy: lastPos.coords.accuracy }); } catch (e) {}
 }
-function syncTracking() {
-  if (hasActive()) startTracking();
-  else { stopTracking(); setTrackMsg('التتبع يعمل عند وجود طلب نشط'); }
-}
-/* تحديث الطلبات تلقائياً كل دقيقة (بصمت) ليبقى قرار التتبع محدَّثاً */
-setInterval(() => {
-  if (getToken() && !document.hidden) api('/api/staff/orders').then((o) => { orders = o; renderOrders(); }).catch(() => {});
-}, 60000);
-
-window.addEventListener('DOMContentLoaded', async () => {
-  const t = getToken();
-  if (!t) {
-    showLogin();
-  } else {
-    try {
-      await fetchOrders();
-      $('loginOverlay').classList.add('hidden');
-    } catch(e) {
-      showLogin();
-    }
-  }
+setInterval(() => { if (watchId != null && !document.hidden) sendLocation(); }, 10000);
+async function requestWake() { try { if ('wakeLock' in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } } catch (e) {} }
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && store.get(TOKEN_KEY)) { load(true); if (watchId != null) requestWake(); }
 });
+$('gpsPill').addEventListener('click', () => {
+  if (gpsDenied) { gpsDenied = false; startTracking(); toast('إن لم يظهر طلب الإذن، فعّل الموقع من إعدادات المتصفح للموقع', false); }
+});
+
+/* ---------- الاتصال ---------- */
+window.addEventListener('online', () => { $('offlineBar').classList.add('hidden'); if (store.get(TOKEN_KEY)) load(true); });
+window.addEventListener('offline', () => $('offlineBar').classList.remove('hidden'));
+
+/* ---------- PWA: التثبيت والـ Service Worker ---------- */
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; $('installBtn').classList.remove('hidden'); });
+$('installBtn').addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt(); await deferredPrompt.userChoice.catch(() => {});
+  deferredPrompt = null; $('installBtn').classList.add('hidden');
+});
+window.addEventListener('appinstalled', () => $('installBtn').classList.add('hidden'));
+const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !standalone) $('iosHint').classList.remove('hidden');
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+
+/* ---------- البداية ---------- */
+(async function init() {
+  const token = store.get(TOKEN_KEY);
+  if (!token) return showLogin('');
+  try { me = JSON.parse(store.get(INFO_KEY) || 'null'); } catch (e) { me = null; }
+  try { orders = JSON.parse(store.get(CACHE_KEY) || '[]'); } catch (e) { orders = []; }
+  showApp(); render();
+  try { me = await api('/api/staff/me'); store.set(INFO_KEY, JSON.stringify(me)); showApp(); }
+  catch (e) { if (e.message === 'غير مصرّح') return; }
+  start();
+})();
 </script>
 </body>
 </html>
