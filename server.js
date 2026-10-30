@@ -139,6 +139,22 @@ const sign = (v) => crypto.createHmac('sha256', ADMIN_SECRET).update(v).digest('
 const safeEq = (x, y) => { const a = Buffer.from(x), b = Buffer.from(y); return a.length === b.length && crypto.timingSafeEqual(a, b); };
 const bearer = (req) => (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
 
+/* جلسة العميل: cu.phone.exp.sig (30 يوماً) — توقيعها يختلف عن توقيع الأدمن والمندوب */
+const custSign = (phone, exp) => sign('customer|' + phone + '|' + exp);
+const custToken = (phone) => {
+  const exp = String(Date.now() + 30 * 24 * 3600e3);
+  return 'cu.' + phone + '.' + exp + '.' + custSign(phone, exp);
+};
+const customerFrom = (req) => {
+  const [role, phone, exp, sig] = bearer(req).split('.');
+  return (role === 'cu' && phone && exp && sig && Number(exp) > Date.now() && safeEq(sig, custSign(phone, exp))) ? phone : null;
+};
+function authCustomer(req, res, next) {
+  const p = customerFrom(req);
+  if (p) { req.customerPhone = p; return next(); }
+  fail(res, 401, 'سجّل الدخول أولاً');
+}
+
 /* تشفير كلمة مرور المندوب بشكل قابل للعرض للأدمن فقط (AES-256-GCM) */
 const ENC_KEY = crypto.createHash('sha256').update('staff-pw|' + ADMIN_SECRET).digest();
 const encPw = (pw) => {
@@ -248,6 +264,13 @@ async function initializeDatabase() {
       ALTER TABLE staff ADD COLUMN IF NOT EXISTS accuracy NUMERIC(8,1);
       ALTER TABLE staff ADD COLUMN IF NOT EXISTS loc_at TIMESTAMPTZ;
       CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_phone ON staff (phone);
+      -- العملاء: الرقم السري (4-6 أرقام) محفوظ مشفّراً (scrypt) وليس نصاً صريحاً
+      CREATE TABLE IF NOT EXISTS customers (
+        phone VARCHAR(50) PRIMARY KEY,
+        full_name VARCHAR(255) NOT NULL,
+        password_hash TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      );
     `);
     console.log('✅ Connected to Neon PostgreSQL — tables verified.');
   } finally { client.release(); }
@@ -291,6 +314,18 @@ app.post('/api/orders', limit('orders', 20, 3600e3), h(async (req, res) => {
     title = 'طلب من القائمة';
   } else return fail(res, 400, 'نوع الطلب غير صحيح');
 
+  /* الرقم السري: عميل جديد => ننشئ حسابه، عميل موجود => نتحقق من رقمه السري */
+  const pw = String(b.password || '');
+  const existing = (await pool.query('SELECT password_hash FROM customers WHERE phone = $1', [phone])).rows[0];
+  if (existing) {
+    if (!checkPw(pw, existing.password_hash)) return fail(res, 401, 'الرقم السري غير صحيح لهذا الجوال');
+  } else {
+    if (!/^\d{4,6}$/.test(pw)) return fail(res, 400, 'الرقم السري من 4 إلى 6 أرقام');
+    await pool.query(
+      'INSERT INTO customers (phone, full_name, password_hash) VALUES ($1,$2,$3) ON CONFLICT (phone) DO NOTHING',
+      [phone, name, hashPw(pw)]);
+  }
+
   const address = 'موقع التوصيل | https://www.google.com/maps?q=' + lat.toFixed(5) + ',' + lng.toFixed(5);
   const token = crypto.randomBytes(16).toString('hex');
   for (let i = 0; i < 5; i++) {
@@ -301,10 +336,34 @@ app.post('/api/orders', limit('orders', 20, 3600e3), h(async (req, res) => {
             booking_date, booking_time, location_address, latitude, longitude, service_price)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
         [id, sha(token), name, phone, type, title, planId, meals, JSON.stringify(items), date, time, address, lat, lng, price]);
-      return res.status(201).json({ order: strip(rows[0]), token });
+      return res.status(201).json({ order: strip(rows[0]), token, session: custToken(phone) });
     } catch (e) { if (e.code !== '23505') throw e; }
   }
   fail(res, 500, 'تعذر إنشاء رقم الطلب، حاول مرة أخرى');
+}));
+
+/* دخول العميل برقم الجوال والرقم السري */
+app.post('/api/customer/login', limit('cust_login', 10, 15 * 60e3), h(async (req, res) => {
+  const phone = String((req.body && req.body.phone) || '').trim(), pw = String((req.body && req.body.password) || '');
+  if (!/^05\d{8}$/.test(phone) || !pw) return fail(res, 400, 'أدخل الجوال والرقم السري');
+  const c = (await pool.query('SELECT * FROM customers WHERE phone = $1', [phone])).rows[0];
+  if (!c || !checkPw(pw, c.password_hash)) return fail(res, 401, 'رقم الجوال أو الرقم السري غير صحيح');
+  res.json({ token: custToken(phone), name: c.full_name });
+}));
+
+/* طلبات العميل المسجّل (من تاريخ إنشاء حسابه فصاعداً) */
+app.post('/api/customer/orders', limit('cust_orders', 120, 60e3), authCustomer, h(async (req, res) => {
+  const c = (await pool.query('SELECT created_at FROM customers WHERE phone = $1', [req.customerPhone])).rows[0];
+  if (!c) return fail(res, 401, 'غير مصرّح');
+  const { rows } = await pool.query(
+    `${ORDER_WITH_DRIVER} WHERE o.client_phone = $1 AND o.created_at >= $2 ORDER BY o.created_at DESC LIMIT 100`,
+    [req.customerPhone, c.created_at]);
+  const pay = rows.some((r) => r.status === 'awaiting_payment') ? await getPayment() : null;
+  res.json(rows.map((r) => {
+    const o = publicOrder(r);
+    if (r.status === 'awaiting_payment' && pay && pay.iban) o.payment_info = { bank: pay.bank, holder: pay.holder, iban: pay.iban };
+    return o;
+  }));
 }));
 
 app.post('/api/my/orders', limit('my', 120, 60e3), h(async (req, res) => {
@@ -341,8 +400,10 @@ function canEditDay(order, d) {
 }
 
 app.post('/api/my/orders/:id/meals', limit('meals', 60, 3600e3), h(async (req, res) => {
-  const token = String((req.body && req.body.token) || '');
-  const { rows } = await pool.query('SELECT * FROM orders WHERE id = $1 AND access_token = $2', [req.params.id, sha(token)]);
+  const cu = customerFrom(req);
+  const { rows } = cu
+    ? await pool.query('SELECT * FROM orders WHERE id = $1 AND client_phone = $2', [req.params.id, cu])
+    : await pool.query('SELECT * FROM orders WHERE id = $1 AND access_token = $2', [req.params.id, sha(String((req.body && req.body.token) || ''))]);
   const o = rows[0];
   if (!o) return fail(res, 404, 'الطلب غير موجود');
   if (o.order_type !== 'subscription' || o.status === 'cancelled') return fail(res, 400, 'لا يمكن تعديل أطباق هذا الطلب');

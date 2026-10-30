@@ -299,7 +299,7 @@
     const acc = document.querySelector('button[onclick="openAccount()"]');
     if (acc) acc.insertAdjacentHTML('beforebegin', '<button onclick="openCalc()" class="flex items-center gap-2 text-xs font-bold bg-saffron-50 hover:bg-saffron-100 text-saffron-600 px-3 sm:px-4 py-2.5 rounded-2xl border border-saffron-300 transition"><i class="fa-solid fa-calculator"></i><span class="hidden sm:inline">حاسبة السعرات</span></button>');
     const grid = g('plansGrid');
-    if (grid) grid.insertAdjacentHTML('afterend', '<div class="mt-8 text-center"><button onclick="openCalc()" class="bg-saffron-500 hover:bg-saffron-600 text-white font-black px-6 py-3.5 rounded-2xl shadow-lg transition"><i class="fa-solid fa-calculator ml-2"></i>احسب سعراتك (أو أدخل رقم مدربك) ورشّح لي الخطة</button></div>');
+    if (grid) grid.insertAdjacentHTML('afterend', '<div class="mt-8 text-center"><button onclick="openCalc()" class="bg-saffron-500 hover:bg-saffron-600 text-white font-black px-6 py-3.5 rounded-2xl shadow-lg transition"><i class="fa-solid fa-calculator ml-2"></i>احسب سعراتك (أو أدخل "رقم سعراتك" ) ورشّح لي الخطة</button></div>');
     window.renderMenu(); window.fillSizes(); window.renderCart();
   });
 })();
